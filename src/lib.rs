@@ -2,6 +2,9 @@
 // TODO: Remove the need for these. I'm experimenting right now.
 #![allow(clippy::missing_errors_doc)]
 
+#[macro_use]
+extern crate log;
+
 use std::fmt::Debug;
 
 use async_imap::{self, Client, Session};
@@ -11,6 +14,12 @@ use futures::{AsyncRead, AsyncWrite};
 
 mod config;
 mod fetch;
+mod inbox;
+
+// TODO: Remove
+pub use fetch::fetch_email;
+pub use inbox::{SequenceNumber, Watcher};
+
 pub async fn setup_session(
     cfg: &Config,
 ) -> async_imap::error::Result<Session<impl AsyncRead + AsyncWrite + Unpin + Debug + Send>> {
@@ -22,18 +31,6 @@ pub async fn setup_session(
         .login(imap_cfg.username(), imap_cfg.password())
         .await
         .map_err(|err| err.0)
-}
-
-pub async fn fetch_emails<T>(session: Session<T>) -> async_imap::error::Result<()>
-where
-    T: AsyncRead + AsyncWrite + Unpin + Debug + Send,
-{
-    let mut current_session = session;
-    current_session.examine("INBOX").await?;
-    loop {
-        println!("Idling...");
-        current_session = fetch::fetch_email(current_session).await?;
-    }
 }
 
 async fn build_imap_client(

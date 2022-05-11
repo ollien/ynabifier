@@ -12,6 +12,10 @@ derive-getters = "0.2.0"
 async-imap = "0.5.0"
 mailparse = "0.13.8"
 tokio = { version = "1.18", features = ["full"] }
+thiserror = "1.0"
+log = "0.4.17"
+simplelog = "0.12.0"
+
 # For annoying reasons, we must pin exactly the same versions as async-imap if we want to use
 # their types.
 # https://github.com/async-email/async-imap/pull/57

@@ -1,12 +1,12 @@
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Config {
     imap: IMAP,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct IMAP {
     domain: String,
