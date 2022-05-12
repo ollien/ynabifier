@@ -2,11 +2,13 @@ use std::{fmt::Debug, time::Duration};
 use thiserror::Error;
 
 use async_imap::{
-    error::{Error as IMAPError, Result as IMAPResult},
+    error::Error as IMAPError,
     extensions::idle::{Handle, IdleResponse},
     imap_proto::Response as IMAPResponse,
 };
 use futures::{AsyncRead, AsyncWrite};
+
+use crate::IMAPTransportStream;
 
 // 29 minutes, as per RFC2177 which specifies we should re-issue our idle every 29 minutes
 const WAIT_TIMEOUT: Duration = Duration::from_secs(29 * 60);
@@ -55,10 +57,7 @@ impl Data {
     }
 }
 
-pub async fn wait_for_data<T>(idle_handle: &mut Handle<T>) -> Result<Data, Error>
-where
-    T: AsyncRead + AsyncWrite + Unpin + Debug + Send,
-{
+pub async fn wait_for_data(idle_handle: &mut Handle<IMAPTransportStream>) -> Result<Data, Error> {
     println!("starting timeout wait...");
     let (idle_response_future, _stop) = idle_handle.wait_with_timeout(WAIT_TIMEOUT);
     let idle_response = idle_response_future.await?;

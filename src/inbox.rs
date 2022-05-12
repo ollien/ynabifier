@@ -4,11 +4,12 @@ use async_imap::{
     error::{Error as IMAPError, Result as IMAPResult},
     extensions::idle::Handle,
     imap_proto::{MailboxDatum, Response},
-    Session,
 };
 use futures::{AsyncRead, AsyncWrite};
 use thiserror::Error;
 use tokio::sync::broadcast::{self, error::SendError};
+
+use crate::{IMAPClient, IMAPSession, IMAPTransportStream};
 
 mod idle;
 
@@ -58,10 +59,7 @@ impl Watcher {
 
     /// Watch for the arrival of a single email. While the `Watcher` is watching, the caller must relinquish ownership
     /// of the `Session`, but it will be returned to it upon succesful completion of the
-    pub async fn watch_for_email<T>(&self, session: Session<T>) -> Result<Session<T>, WatchError>
-    where
-        T: AsyncRead + AsyncWrite + Unpin + Debug + Send,
-    {
+    pub async fn watch_for_email(&self, session: IMAPSession) -> Result<IMAPSession, WatchError> {
         let mut idle_handle = session.idle();
         let sequence_number = Self::idle_for_email(&mut idle_handle).await?;
         self.sender.send(sequence_number)?;
@@ -70,10 +68,9 @@ impl Watcher {
         Ok(reclaimed_session)
     }
 
-    async fn idle_for_email<T>(idle_handle: &mut Handle<T>) -> IMAPResult<SequenceNumber>
-    where
-        T: AsyncRead + AsyncWrite + Unpin + Debug + Send,
-    {
+    async fn idle_for_email(
+        idle_handle: &mut Handle<IMAPTransportStream>,
+    ) -> IMAPResult<SequenceNumber> {
         loop {
             idle_handle.init().await?;
             let idle_res = idle::wait_for_data(idle_handle).await;

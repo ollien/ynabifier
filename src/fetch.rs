@@ -1,27 +1,18 @@
 use std::error::Error;
-use std::{fmt::Debug, time::Duration};
-
-use async_imap::{
-    extensions::idle::{Handle, IdleResponse},
-    imap_proto::{MailboxDatum, Response},
-    Session,
-};
-use futures::{AsyncRead, AsyncWrite, StreamExt};
 
 use crate::inbox::SequenceNumber;
+use crate::IMAPSession;
+use futures::StreamExt;
 
 /// `fetch_email` will consume the current session and put it into an `Idle` state, until a new email is received
 ///
 /// # Errors
 /// If, for any reason, the email fails to be fetched, one of `async_imap` error's will be returned.
 #[allow(clippy::module_name_repetitions)]
-pub async fn fetch_email<T>(
-    session: &mut Session<T>,
+pub async fn fetch_email(
+    session: &mut IMAPSession,
     sequence_number: SequenceNumber,
-) -> Result<String, Box<dyn Error>>
-where
-    T: AsyncRead + AsyncWrite + Unpin + Debug + Send,
-{
+) -> Result<String, Box<dyn Error>> {
     let message = session
         .fetch(format!("{}", sequence_number.value()), "RFC822")
         .await?

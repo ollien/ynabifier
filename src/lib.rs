@@ -7,8 +7,9 @@ extern crate log;
 
 use std::fmt::Debug;
 
-use async_imap::{self, Client, Session};
-use async_native_tls::TlsConnector;
+use async_imap;
+use async_native_tls::{TlsConnector, TlsStream};
+use async_std::net::TcpStream;
 pub use config::{Config, IMAP as IMAPConfig};
 use futures::{AsyncRead, AsyncWrite};
 
@@ -20,9 +21,12 @@ mod inbox;
 pub use fetch::fetch_email;
 pub use inbox::{SequenceNumber, Watcher};
 
-pub async fn setup_session(
-    cfg: &Config,
-) -> async_imap::error::Result<Session<impl AsyncRead + AsyncWrite + Unpin + Debug + Send>> {
+type IMAPTransportStream = TlsStream<TcpStream>;
+// TODO: Probably doesn't need to be pub
+type IMAPClient = async_imap::Client<IMAPTransportStream>;
+pub type IMAPSession = async_imap::Session<IMAPTransportStream>;
+
+pub async fn setup_session(cfg: &Config) -> async_imap::error::Result<IMAPSession> {
     let imap_cfg = cfg.imap();
     println!("Logging in...");
     let client = build_imap_client(imap_cfg).await?;
@@ -33,9 +37,7 @@ pub async fn setup_session(
         .map_err(|err| err.0)
 }
 
-async fn build_imap_client(
-    imap_cfg: &IMAPConfig,
-) -> async_imap::error::Result<Client<impl AsyncRead + AsyncWrite + Unpin + Debug>> {
+async fn build_imap_client(imap_cfg: &IMAPConfig) -> async_imap::error::Result<IMAPClient> {
     let tls_connector = TlsConnector::new();
     async_imap::connect(
         (imap_cfg.domain(), imap_cfg.port()),
