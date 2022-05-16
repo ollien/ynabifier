@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use crate::inbox::SequenceNumber;
+use crate::email::inbox::SequenceNumber;
 use crate::IMAPSession;
 use futures::StreamExt;
 
@@ -9,6 +9,7 @@ use futures::StreamExt;
 /// # Errors
 /// If, for any reason, the email fails to be fetched, one of `async_imap` error's will be returned.
 #[allow(clippy::module_name_repetitions)]
+#[allow(clippy::missing_panics_doc)] // this function is going away soon
 pub async fn fetch_email(
     session: &mut IMAPSession,
     sequence_number: SequenceNumber,

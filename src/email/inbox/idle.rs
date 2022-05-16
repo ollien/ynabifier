@@ -1,3 +1,6 @@
+//! The idle module handles some of the intricacies of the IDLE IMAP operation, including state tracking and
+//! performing the "wait"s needed
+
 use std::{fmt::Debug, time::Duration};
 use thiserror::Error;
 
@@ -6,9 +9,13 @@ use async_imap::{
     extensions::idle::{Handle, IdleResponse},
     imap_proto::Response as IMAPResponse,
 };
-use futures::{AsyncRead, AsyncWrite};
 
-use crate::IMAPTransportStream;
+use crate::{IMAPSession, IMAPTransportStream};
+
+pub use state::IdlerCell;
+
+mod state;
+mod traits;
 
 // 29 minutes, as per RFC2177 which specifies we should re-issue our idle every 29 minutes
 const WAIT_TIMEOUT: Duration = Duration::from_secs(29 * 60);
@@ -26,6 +33,40 @@ pub enum Error {
 impl From<IMAPError> for Error {
     fn from(err: IMAPError) -> Self {
         Self::AsyncIMAPError(err)
+    }
+}
+
+/// `SessionState` holds the state of an idling session, and whether or not we have access to the current session or
+/// the idle handle.
+pub enum SessionState {
+    Initialized(IMAPSession),
+    IdleReady(IdlerCell<Handle<IMAPTransportStream>>),
+}
+
+/// Holds a `SessionState` and allows progression between its various states.
+pub struct SessionCell {
+    inner: state::SessionCell<IMAPSession, Handle<IMAPTransportStream>>,
+}
+
+impl SessionCell {
+    /// Make a new `SessionCell` from the given session. The initial state of this cell is [`SessionState::Initialized`]
+    pub fn new(session: IMAPSession) -> Self {
+        Self {
+            inner: state::SessionCell::new(session),
+        }
+    }
+
+    /// Get the idle handle, if one already exists, or produce a new one from the current Session.
+    pub fn get_idler_cell(&mut self) -> &mut IdlerCell<Handle<IMAPTransportStream>> {
+        self.inner.get_idler_cell()
+    }
+
+    /// Dissolve this cell, and get the state that session was in.
+    pub fn into_state(self) -> SessionState {
+        match self.inner.into_state() {
+            state::SessionState::Initialized(session) => SessionState::Initialized(session),
+            state::SessionState::IdleReady(handle) => SessionState::IdleReady(handle),
+        }
     }
 }
 
@@ -58,10 +99,8 @@ impl Data {
 }
 
 pub async fn wait_for_data(idle_handle: &mut Handle<IMAPTransportStream>) -> Result<Data, Error> {
-    println!("starting timeout wait...");
     let (idle_response_future, _stop) = idle_handle.wait_with_timeout(WAIT_TIMEOUT);
     let idle_response = idle_response_future.await?;
-    println!("got a response...");
     match idle_response {
         IdleResponse::ManualInterrupt => panic!("we don't interrupt manually"),
         IdleResponse::Timeout => Err(Error::Timeout),
