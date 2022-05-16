@@ -18,24 +18,29 @@ pub struct IMAP {
 }
 
 impl Config {
+    #[must_use]
     pub fn imap(&self) -> &IMAP {
         &self.imap
     }
 }
 
 impl IMAP {
+    #[must_use]
     pub fn domain(&self) -> &str {
         &self.domain
     }
 
+    #[must_use]
     pub fn port(&self) -> u16 {
         self.port
     }
 
+    #[must_use]
     pub fn username(&self) -> &str {
         &self.username
     }
 
+    #[must_use]
     pub fn password(&self) -> &str {
         &self.password
     }

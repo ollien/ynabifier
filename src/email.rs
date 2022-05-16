@@ -4,8 +4,6 @@ use std::error::Error;
 use self::inbox::SequenceNumber;
 use async_trait::async_trait;
 
-pub use login::{ConfigSessionGenerator, SessionGenerator};
-
 pub mod inbox;
 pub mod login;
 
