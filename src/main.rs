@@ -4,9 +4,9 @@ use simplelog::{Config as LogConfig, SimpleLogger};
 use std::fs::File;
 use tokio::runtime::Runtime;
 use ynabifier::{
-    fetch,
     task::{Cancel, Spawn, SpawnError},
-    Config, ConfigSessionGenerator, SequenceNumberStreamer, SessionGenerator, Watcher,
+    ConcatenatedFetcher, Config, ConfigSessionGenerator, MessageFetcher, SequenceNumberStreamer,
+    Watcher,
 };
 
 // TODO: This function is incredibly messy but it's mostly been used for prototyping so I'll allow it... for now
@@ -28,14 +28,10 @@ fn main() {
             .expect("failed to get stream");
 
         let session_generator = ConfigSessionGenerator::new(config.imap().clone());
-        let mut session = session_generator
-            .new_session()
-            .await
-            .expect("failed to get session");
-
-        while let Some(item) = stream.next().await {
-            session.examine("INBOX").await.expect("examine failed");
-            let email = fetch::fetch_email(&mut session, item)
+        let message_fetcher = ConcatenatedFetcher::new(session_generator);
+        while let Some(seq) = stream.next().await {
+            let email = message_fetcher
+                .fetch_message(seq)
                 .await
                 .expect("failed to get email");
             println!("{}", email);

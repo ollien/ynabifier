@@ -6,6 +6,7 @@ use async_trait::async_trait;
 
 pub mod inbox;
 pub mod login;
+pub mod message;
 
 /// `SequenceNumberStreamer` will stream new emails, and then return their sequence numbers to the stream.
 #[async_trait]
@@ -20,6 +21,15 @@ pub trait SequenceNumberStreamer {
     fn stop(&mut self);
 }
 
-pub struct Broker<S: SequenceNumberStreamer> {
-    watcher: S,
+/// `MessageFetcher` will fetch the contents of an email
+#[async_trait]
+pub trait MessageFetcher {
+    type Error: Error;
+
+    async fn fetch_message(&self, sequence_number: SequenceNumber) -> Result<String, Self::Error>;
+}
+
+pub struct Broker<W: SequenceNumberStreamer, F: MessageFetcher> {
+    watcher: W,
+    fetcher: F,
 }

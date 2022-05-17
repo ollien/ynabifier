@@ -7,13 +7,17 @@ use async_native_tls::TlsStream;
 use async_std::net::TcpStream;
 pub use config::{Config, IMAP as IMAPConfig};
 
-pub use email::inbox::Watcher;
-pub use email::login::{ConfigSessionGenerator, SessionGenerator};
-pub use email::SequenceNumberStreamer;
+pub use email::{
+    inbox::Watcher,
+    // TODO: most of these shouldn't be public
+    login::{ConfigSessionGenerator, SessionGenerator},
+    message::ConcatenatedFetcher,
+    MessageFetcher,
+    SequenceNumberStreamer,
+};
 
 mod config;
 mod email;
-pub mod fetch;
 pub mod task;
 
 type IMAPTransportStream = TlsStream<TcpStream>;
