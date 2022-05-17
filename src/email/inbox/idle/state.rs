@@ -64,20 +64,20 @@ impl<S: IntoIdler<OutputIdler = I>, I: Idler<DoneIdleable = S>> SessionCell<S, I
 
     /// Starts a new idle session if possible, or will return itself if the session is already started.
     pub fn get_idler_cell(&mut self) -> &mut IdlerCell<I> {
-        // I really hate this method
+        // In normal operation, this can't happen. This can only happen if the following assignment panics
+        // after the call to `take()`
         assert!(self.state.is_some(), "invariant violated: state is None");
-        if let Some(SessionState::IdleReady(ref mut idle_handle)) = self.state {
-            return idle_handle;
-        }
 
-        let state = std::mem::take(&mut self.state).unwrap();
-        let session = match state {
-            SessionState::IdleReady(_) => panic!("unreachable"),
-            SessionState::Initialized(session) => session,
-        };
+        self.state = self.state.take().map(|state| match state {
+            // If we've already gotten ready to idle, then we can just pass it right through
+            SessionState::IdleReady(idle_cell) => SessionState::IdleReady(idle_cell),
+            // ...otherwise, we have to begin the idle
+            SessionState::Initialized(session) => {
+                let idle_cell = IdlerCell::new(session.begin_idle());
+                SessionState::IdleReady(idle_cell)
+            }
+        });
 
-        let idler_cell = IdlerCell::new(session.begin_idle());
-        self.state = Some(SessionState::IdleReady(idler_cell));
         match &mut self.state {
             Some(SessionState::IdleReady(idler)) => idler,
             _ => panic!("unreachable"),
