@@ -159,6 +159,7 @@ mod tests {
         collections::HashMap,
         fmt::{Display, Formatter},
         sync::Arc,
+        time::Duration,
     };
 
     use crate::task::{Cancel, SpawnError};
@@ -170,6 +171,7 @@ mod tests {
         Future, FutureExt, SinkExt,
     };
     use futures::{select, StreamExt};
+    use futures_timer::Delay;
     use thiserror::Error;
 
     #[derive(Error, Debug)]
@@ -306,6 +308,7 @@ mod tests {
         select! {
             msg = message_rx.next() => assert_eq!("hello, world!", msg.expect("empty channel")),
             _ = join_handle.fuse() => panic!("broker returned, but did not receive message"),
+            _ = Delay::new(Duration::from_secs(5)).fuse() => panic!("test timed out"),
         };
     }
 }

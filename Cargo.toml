@@ -27,3 +27,4 @@ stop-token = "0.7"
 
 [dev-dependencies]
 textwrap = "0.15.0"
+futures-timer = "3.0"
