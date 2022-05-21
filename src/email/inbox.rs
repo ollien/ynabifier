@@ -39,7 +39,7 @@ pub enum WatchError {
     SpawnError(SpawnError),
 }
 
-/// Holds any data that watch tasks my access during a `Watcher`'s stream.
+/// Holds any data that watch tasks may be accessed during a `Watcher`'s stream.
 struct WatchTaskData<G: SessionGenerator> {
     session_generator: G,
     // atomics are used here so that I don't have to fiddle with a lock around the entire task
