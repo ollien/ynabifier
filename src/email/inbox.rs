@@ -1,7 +1,7 @@
 //! The inbox module holds implementations to allow for the monitoring of a real inbox
 
 use self::idle::{SessionCell, SessionState};
-use super::{login::SessionGenerator, SequenceNumberStreamer};
+use super::{login::SessionGenerator, SequenceNumber, SequenceNumberStreamer};
 use crate::{
     task::{Cancel, Spawn, SpawnError},
     IMAPSession, IMAPTransportStream,
@@ -30,10 +30,6 @@ mod idle;
 
 const CHANNEL_SIZE: usize = 16;
 
-/// The ID of a single message stored in the inbox.
-#[derive(Clone, Copy, Debug)]
-pub struct SequenceNumber(u32);
-
 /// An error that occurs during the setup process of a [`Watcher`] stream
 #[derive(Error, Debug)]
 pub enum WatchError {
@@ -55,13 +51,6 @@ pub struct Watcher<G: SessionGenerator, S: Spawn> {
     spawner: S,
     task_data: Arc<WatchTaskData<G>>,
     cancelers: Vec<S::Cancel>,
-}
-
-impl SequenceNumber {
-    /// Get the integral value of this sequence number
-    pub fn value(self) -> u32 {
-        self.0
-    }
 }
 
 #[async_trait]

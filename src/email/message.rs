@@ -1,7 +1,7 @@
 use crate::{IMAPSession, SessionGenerator};
 use std::iter;
 
-use super::{inbox::SequenceNumber, MessageFetcher};
+use super::{MessageFetcher, SequenceNumber};
 use async_imap::{error::Error as IMAPError, types::Fetch};
 use async_trait::async_trait;
 use futures::StreamExt;
