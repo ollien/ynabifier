@@ -7,15 +7,11 @@ use async_native_tls::TlsStream;
 use async_std::net::TcpStream;
 pub use config::{Config, IMAP as IMAPConfig};
 
-pub use email::{
+use email::{
     inbox::Watcher,
-    // TODO: most of these shouldn't be public
     login::{ConfigSessionGenerator, SessionGenerator},
     message::RawFetcher,
-    MessageFetcher,
-    SequenceNumber,
-    SequenceNumberStreamer,
-    StreamSetupError,
+    SequenceNumberStreamer, StreamSetupError,
 };
 use futures::Stream;
 use task::Spawn;

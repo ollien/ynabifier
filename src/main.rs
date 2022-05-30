@@ -8,7 +8,6 @@ use ynabifier::{
     Config,
 };
 
-// TODO: This function is incredibly messy but it's mostly been used for prototyping so I'll allow it... for now
 fn main() {
     let _ = SimpleLogger::init(LevelFilter::Debug, LogConfig::default()).expect("setup failed");
     let config_file = File::open("config.yml").expect("failed to open config file");
