@@ -5,7 +5,7 @@ use std::fs::File;
 use tokio::runtime::Runtime;
 use ynabifier::{
     task::{Cancel, Spawn, SpawnError},
-    Config, ConfigSessionGenerator, MessageFetcher, RawFetcher, SequenceNumberStreamer, Watcher,
+    Config,
 };
 
 // TODO: This function is incredibly messy but it's mostly been used for prototyping so I'll allow it... for now
@@ -17,31 +17,17 @@ fn main() {
 
     let runtime = Runtime::new().expect("failed to create runtime");
 
-    runtime.block_on(async {
-        let session_generator = ConfigSessionGenerator::new(config.imap().clone());
-        let tokio_spawner = TokioSpawner {};
-        let mut watcher = Watcher::new(session_generator, tokio_spawner);
-        let mut stream = watcher
-            .watch_for_new_messages()
-            .await
-            .expect("failed to get stream");
-
-        let session_generator = ConfigSessionGenerator::new(config.imap().clone());
-        let message_fetcher = RawFetcher::new(session_generator);
-        while let Some(seq) = stream.next().await {
-            let email = message_fetcher
-                .fetch_message(seq)
-                .await
-                .expect("failed to get email");
-            println!(
-                "{}",
-                String::from_utf8(email).expect("message was not utf-8")
-            );
-            watcher.stop();
+    runtime.block_on(async move {
+        let mut stream = ynabifier::stream_new_messages(&TokioSpawner, config.imap().clone())
+            .expect("failed to setup stream");
+        while let Some(msg) = stream.next().await {
+            // This is perhaps not a sound assumption, but is fine for testing
+            dbg!(String::from_utf8(msg));
         }
-    });
+    })
 }
 
+#[derive(Clone)]
 struct TokioSpawner;
 
 impl Spawn for TokioSpawner {
