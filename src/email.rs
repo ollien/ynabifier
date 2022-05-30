@@ -19,8 +19,6 @@ use crate::{
 
 use async_trait::async_trait;
 
-
-
 pub mod inbox;
 pub mod login;
 pub mod message;
@@ -241,13 +239,13 @@ mod tests {
         time::Duration,
     };
 
-    use crate::task::{Cancel, SpawnError};
+    use crate::testutil::TokioSpawner;
 
     use super::*;
     use futures::{
         channel::mpsc::{self, UnboundedReceiver, UnboundedSender},
         lock::Mutex,
-        Future, FutureExt, SinkExt,
+        FutureExt, SinkExt,
     };
     use futures::{select, StreamExt};
     use futures_timer::Delay;
@@ -331,34 +329,6 @@ mod tests {
             self.messages.get(&sequence_number).cloned().ok_or_else(|| {
                 StringError(format!("sequence number {:?} not found", sequence_number))
             })
-        }
-    }
-
-    #[derive(Clone)]
-    struct TokioSpawner;
-    impl Spawn for TokioSpawner {
-        type Cancel = CancelFnOnce;
-
-        fn spawn<F: Future + Send + 'static>(&self, future: F) -> Result<Self::Cancel, SpawnError>
-        where
-            <F as Future>::Output: Send,
-        {
-            let handle = tokio::spawn(future);
-            let canceler = CancelFnOnce {
-                cancel_func: Box::new(move || handle.abort()),
-            };
-
-            Ok(canceler)
-        }
-    }
-
-    struct CancelFnOnce {
-        cancel_func: Box<dyn FnOnce() + Send + Sync>,
-    }
-
-    impl Cancel for CancelFnOnce {
-        fn cancel(self) {
-            (self.cancel_func)();
         }
     }
 

@@ -25,6 +25,8 @@ const CHANNEL_SIZE: usize = 16;
 mod config;
 mod email;
 pub mod task;
+#[cfg(test)]
+mod testutil;
 
 type IMAPTransportStream = TlsStream<TcpStream>;
 type IMAPClient = async_imap::Client<IMAPTransportStream>;
