@@ -98,6 +98,7 @@ where
     fn stop(&mut self) {
         info!("stopping...");
         self.task_data.stopped.store(true, Ordering::Release);
+
         debug!("stop flag set, signalling cancelers");
         let cancelers = mem::take(&mut self.cancelers);
         for canceler in cancelers {
@@ -135,18 +136,21 @@ impl<G: SessionGenerator> WatchTaskData<G> {
             let sink_res = self
                 .watch_for_new_emails_until_fail(current_session, sender)
                 .await;
-            if let Ok(next_session) = sink_res {
-                current_session = next_session;
-                continue;
-            }
 
-            let err = sink_res.unwrap_err();
-            error!("failed to watch for new emails: {}", err);
-            let maybe_session = self.get_session_with_retry().await;
-            match maybe_session {
-                Some(new_session) => current_session = new_session,
-                // `get_session_with_retry` will only return None if the current watcher is stopped
-                None => break,
+            match sink_res {
+                Ok(next_session) => {
+                    current_session = next_session;
+                    continue;
+                }
+                Err(err) => {
+                    error!("failed to watch for new emails: {}", err);
+                    let maybe_session = self.get_session_with_retry().await;
+                    match maybe_session {
+                        Some(new_session) => current_session = new_session,
+                        // `get_session_with_retry` will only return None if the current watcher is stopped
+                        None => break,
+                    }
+                }
             }
         }
 
