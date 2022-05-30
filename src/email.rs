@@ -19,6 +19,10 @@ pub mod message;
 pub struct SequenceNumber(u32);
 
 impl SequenceNumber {
+    pub fn new(seq: u32) -> Self {
+        Self(seq)
+    }
+
     /// Get the integral value of this sequence number
     pub fn value(self) -> u32 {
         self.0
@@ -44,15 +48,18 @@ pub trait SequenceNumberStreamer {
     fn stop(&mut self);
 }
 
-/// `MessageFetcher` will fetch the contents of an email
+/// `MessageFetcher` will fetch the contents of an email. Implementations should not really perform post-processing on
+/// the emails, so as to prevent blocking other async tasks.
 #[async_trait]
 pub trait MessageFetcher {
     type Error: Error;
 
-    async fn fetch_message(&self, sequence_number: SequenceNumber) -> Result<String, Self::Error>;
+    /// Fetch an individual email based on its sequence number. Unfortunately, because the format cannot be guaranteed
+    ///  to be UTF-8, each message returned must return an owned copy of the raw bytes for further post-processing.
+    async fn fetch_message(&self, sequence_number: SequenceNumber) -> Result<Vec<u8>, Self::Error>;
 }
 
-struct FetchTask<F: MessageFetcher, O: Sink<String> + Clone> {
+struct FetchTask<F: MessageFetcher, O: Sink<Vec<u8>> + Clone> {
     fetcher: Arc<Mutex<F>>,
     output_sink: O,
 }
@@ -62,7 +69,7 @@ where
     W: SequenceNumberStreamer,
     F: MessageFetcher,
     S: Spawn,
-    O: Sink<String> + Clone,
+    O: Sink<Vec<u8>> + Clone,
 {
     watcher: W,
     task_data: FetchTask<F, O>,
@@ -76,7 +83,7 @@ where
     F: MessageFetcher + Send + Sync + 'static,
     F::Error: Send,
     S: Spawn,
-    O: Sink<String> + Unpin + Clone + Send + Sync + 'static,
+    O: Sink<Vec<u8>> + Unpin + Clone + Send + Sync + 'static,
     O::Error: Debug,
 {
     pub fn new(watcher: W, fetcher: F, spawner: S, output_sink: O) -> Self {
@@ -114,7 +121,7 @@ where
 impl<F, O> FetchTask<F, O>
 where
     F: MessageFetcher,
-    O: Sink<String> + Clone + Send + Sync + Unpin,
+    O: Sink<Vec<u8>> + Clone + Send + Sync + Unpin,
     O::Error: Debug,
 {
     pub fn new(fetcher: F, output_sink: O) -> Self {
@@ -143,7 +150,7 @@ where
     }
 }
 
-impl<F: MessageFetcher, O: Sink<String> + Clone> Clone for FetchTask<F, O> {
+impl<F: MessageFetcher, O: Sink<Vec<u8>> + Clone> Clone for FetchTask<F, O> {
     fn clone(&self) -> Self {
         Self {
             // because `fetcher` is wrapped in an Arc, we must derive Clone manually.
@@ -227,7 +234,7 @@ mod tests {
 
     #[derive(Default)]
     struct MockMessageFetcher {
-        messages: HashMap<SequenceNumber, String>,
+        messages: HashMap<SequenceNumber, Vec<u8>>,
     }
 
     impl MockMessageFetcher {
@@ -236,7 +243,7 @@ mod tests {
         }
 
         pub fn stage_message(&mut self, seq: SequenceNumber, message: &str) {
-            self.messages.insert(seq, message.to_string());
+            self.messages.insert(seq, message.bytes().collect());
         }
     }
 
@@ -247,7 +254,7 @@ mod tests {
         async fn fetch_message(
             &self,
             sequence_number: SequenceNumber,
-        ) -> Result<String, Self::Error> {
+        ) -> Result<Vec<u8>, Self::Error> {
             self.messages.get(&sequence_number).cloned().ok_or_else(|| {
                 StringError(format!("sequence number {:?} not found", sequence_number))
             })
@@ -285,7 +292,7 @@ mod tests {
     async fn test_messages_from_streamer_go_to_sink() {
         let mock_watcher = MockSequenceNumberStreamer::new();
         let mut mock_fetcher = MockMessageFetcher::new();
-        let (message_tx, mut message_rx) = mpsc::unbounded::<String>();
+        let (message_tx, mut message_rx) = mpsc::unbounded();
 
         let watcher_sender_mutex = mock_watcher.sender.clone();
         let mut watcher_sender = watcher_sender_mutex.lock().await;
@@ -306,7 +313,10 @@ mod tests {
             .expect("send failed");
 
         select! {
-            msg = message_rx.next() => assert_eq!("hello, world!", msg.expect("empty channel")),
+            msg = message_rx.next() => assert_eq!(
+                "hello, world!".bytes().collect::<Vec<u8>>(),
+                msg.expect("empty channel"),
+            ),
             _ = join_handle.fuse() => panic!("broker returned, but did not receive message"),
             _ = Delay::new(Duration::from_secs(5)).fuse() => panic!("test timed out"),
         };

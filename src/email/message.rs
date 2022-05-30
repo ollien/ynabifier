@@ -15,51 +15,45 @@ pub enum FetchError {
     IMAPSetupFailed(IMAPError),
     #[error("perform message fetch: {0}")]
     MessageFetchFailed(IMAPError),
-    // SequenceNumber does not implement Display
-    #[error("the given sequence number ({0:?}) yielded no results")]
+    #[error("the given sequence number ({0}) yielded no results")]
     MessageNotFound(SequenceNumber),
-    #[error("failed to parse email: {0}")]
-    ParseFailed(MailParseError),
+    #[error("a message was fetched for sequence number {0}, but it had no body")]
+    NoBody(SequenceNumber),
     #[error("failed to tear down session: {0}")]
     TeardownFailed(IMAPError),
 }
 
-/// Fetches a message, and concatenates all sub-parts
-pub struct ConcatenatedFetcher<G: SessionGenerator> {
+/// Fetches a message in its unadorned from the mail server
+pub struct RawFetcher<G: SessionGenerator> {
     session_generator: G,
 }
 
-impl<G: SessionGenerator> ConcatenatedFetcher<G> {
+impl<G: SessionGenerator> RawFetcher<G> {
     pub fn new(session_generator: G) -> Self {
         Self { session_generator }
     }
 }
 
 #[async_trait]
-impl<G> MessageFetcher for ConcatenatedFetcher<G>
+impl<G> MessageFetcher for RawFetcher<G>
 where
     G: SessionGenerator + Send + Sync + 'static,
 {
     type Error = FetchError;
 
-    async fn fetch_message(&self, sequence_number: SequenceNumber) -> Result<String, Self::Error> {
+    async fn fetch_message(&self, sequence_number: SequenceNumber) -> Result<Vec<u8>, Self::Error> {
         // TODO: This could maybe be longer lived?
         let mut session = generate_fetchable_session(&self.session_generator)
             .await
             .map_err(FetchError::IMAPSetupFailed)?;
 
         let message = get_message_from_session(sequence_number, &mut session).await?;
-        let concatted_message = {
-            let message_part_iter = get_message_parts(&message).map_err(FetchError::ParseFailed)?;
-            message_part_iter
-                .collect::<Result<String, _>>()
-                .map_err(FetchError::ParseFailed)?
-        };
+        let body = message.body().ok_or(FetchError::NoBody(sequence_number))?;
 
         // TODO: this could use RAII (has the same problem as `inbox` does)
         session.logout().await.map_err(FetchError::TeardownFailed)?;
 
-        Ok(concatted_message)
+        Ok(body.to_vec())
     }
 }
 

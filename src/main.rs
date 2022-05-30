@@ -5,8 +5,7 @@ use std::fs::File;
 use tokio::runtime::Runtime;
 use ynabifier::{
     task::{Cancel, Spawn, SpawnError},
-    ConcatenatedFetcher, Config, ConfigSessionGenerator, MessageFetcher, SequenceNumberStreamer,
-    Watcher,
+    Config, ConfigSessionGenerator, MessageFetcher, RawFetcher, SequenceNumberStreamer, Watcher,
 };
 
 // TODO: This function is incredibly messy but it's mostly been used for prototyping so I'll allow it... for now
@@ -28,13 +27,16 @@ fn main() {
             .expect("failed to get stream");
 
         let session_generator = ConfigSessionGenerator::new(config.imap().clone());
-        let message_fetcher = ConcatenatedFetcher::new(session_generator);
+        let message_fetcher = RawFetcher::new(session_generator);
         while let Some(seq) = stream.next().await {
             let email = message_fetcher
                 .fetch_message(seq)
                 .await
                 .expect("failed to get email");
-            println!("{}", email);
+            println!(
+                "{}",
+                String::from_utf8(email).expect("message was not utf-8")
+            );
             watcher.stop();
         }
     });

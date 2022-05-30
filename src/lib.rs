@@ -11,8 +11,10 @@ pub use email::{
     inbox::Watcher,
     // TODO: most of these shouldn't be public
     login::{ConfigSessionGenerator, SessionGenerator},
-    message::ConcatenatedFetcher,
+    message::RawFetcher,
+    Broker,
     MessageFetcher,
+    SequenceNumber,
     SequenceNumberStreamer,
 };
 
