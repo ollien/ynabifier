@@ -58,7 +58,7 @@ impl<G, S> SequenceNumberStreamer for Watcher<G, S>
 where
     // unfortunately G must be 'static, since it is used in the task we spawn.
     G: SessionGenerator + Send + Sync + 'static,
-    S: Spawn + Send + Sync,
+    S: Spawn + Send,
 {
     type Stream = Receiver<SequenceNumber>;
     type Error = WatchError;
