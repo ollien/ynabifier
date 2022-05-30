@@ -1,13 +1,25 @@
-use futures::{lock::Mutex, Sink, SinkExt, Stream, StreamExt};
+use futures::{
+    channel::mpsc::{self, Receiver, Sender},
+    lock::Mutex,
+    Sink, SinkExt, Stream, StreamExt,
+};
 use std::{
     error::Error,
     fmt::{Debug, Display, Formatter},
+    pin::Pin,
     sync::Arc,
+    task::{Context, Poll},
+};
+use thiserror::Error;
+
+use crate::{
+    task::{Spawn, SpawnError},
+    CHANNEL_SIZE,
 };
 
-use crate::task::Spawn;
-
 use async_trait::async_trait;
+
+
 
 pub mod inbox;
 pub mod login;
@@ -59,36 +71,88 @@ pub trait MessageFetcher {
     async fn fetch_message(&self, sequence_number: SequenceNumber) -> Result<Vec<u8>, Self::Error>;
 }
 
-struct FetchTask<F: MessageFetcher, O: Sink<Vec<u8>> + Clone> {
+/// `StreamSetupError` will be returned if there was an error in setting up the message stream.
+#[derive(Debug, Error)]
+pub enum StreamSetupError<W: Error> {
+    /// Setting up the watch task itself failed, often due to IMAP problems.
+    #[error("failed to setup the inbox watcher: {0}")]
+    WatchFailed(W),
+    /// Spawning the background stream task failed
+    #[error("failed to spawn stream task: {0}")]
+    SpawnFailed(SpawnError),
+}
+
+/// Get a stream of any messages that come into the given [`SequenceNumberStraemer`]. These messsages will be fetched
+/// by sequence number using the given [`MessageFetcher`]. This requires spawning several background tasks, so a
+/// [`Spawn`] is also required.
+///
+/// # Errors
+/// If the stream cannot be set up (i.e. because the underlying task could not be set up for any reason), then it is
+/// returned.
+pub async fn stream_incoming_messages<W, F, S>(
+    spawn: S,
+    mut watcher: W,
+    fetcher: F,
+) -> Result<MessageStream<S, F>, StreamSetupError<W::Error>>
+where
+    W: SequenceNumberStreamer,
+    W::Stream: Send + Unpin + 'static,
+    F: MessageFetcher + Send + Sync + 'static,
+    F::Error: Send,
+    S: Spawn + Send + Sync + Clone + 'static,
+{
+    let message_stream = watcher
+        .watch_for_new_messages()
+        .await
+        .map_err(StreamSetupError::WatchFailed)?;
+
+    let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
+    let broker = Arc::new(Broker::new(spawn.clone(), fetcher, tx));
+    let broker_arc_clone = broker.clone();
+    spawn
+        .spawn(async move {
+            let mut message_stream = message_stream;
+            broker_arc_clone
+                .stream_incoming_messages_to_sink(&mut message_stream)
+                .await;
+        })
+        .map_err(StreamSetupError::<W::Error>::SpawnFailed)?;
+
+    Ok(MessageStream {
+        _broker: broker,
+        output_stream: rx,
+    })
+}
+
+/// `MessageStream` is a stream of any messages returned from `stream_incoming_messages`.
+// TODO: add some kind of `stop` method to this.
+pub struct MessageStream<S, F> {
+    _broker: Arc<Broker<S, F, Sender<Vec<u8>>>>,
+    output_stream: Receiver<Vec<u8>>,
+}
+
+struct FetchTask<F, O> {
     fetcher: Arc<Mutex<F>>,
     output_sink: O,
 }
 
-pub struct Broker<W, F, S, O>
-where
-    W: SequenceNumberStreamer,
-    F: MessageFetcher,
-    S: Spawn,
-    O: Sink<Vec<u8>> + Clone,
-{
-    watcher: W,
-    task_data: FetchTask<F, O>,
+/// Broker acts as an intermediary that will take incoming sequence numbers, fetch these messages on background tasks,
+/// and return the results to a given output sink.
+struct Broker<S, F, O> {
     spawner: S,
+    task_data: FetchTask<F, O>,
 }
 
-impl<W, F, S, O> Broker<W, F, S, O>
+impl<S, F, O> Broker<S, F, O>
 where
-    W: SequenceNumberStreamer,
-    W::Stream: Unpin,
     F: MessageFetcher + Send + Sync + 'static,
     F::Error: Send,
     S: Spawn,
-    O: Sink<Vec<u8>> + Unpin + Clone + Send + Sync + 'static,
+    O: Sink<Vec<u8>> + Send + Unpin + Clone + 'static,
     O::Error: Debug,
 {
-    pub fn new(watcher: W, fetcher: F, spawner: S, output_sink: O) -> Self {
+    fn new(spawner: S, fetcher: F, output_sink: O) -> Self {
         Self {
-            watcher,
             task_data: FetchTask::new(fetcher, output_sink),
             spawner,
         }
@@ -99,9 +163,10 @@ where
     /// # Errors
     /// Returns an error if there was a problem in setting up the stream. Individual message failures
     /// will be logged.
-    pub async fn stream_incoming_messages_to_sink(&mut self) -> Result<(), W::Error> {
-        let mut stream = self.watcher.watch_for_new_messages().await?;
-
+    async fn stream_incoming_messages_to_sink<R: Stream<Item = SequenceNumber> + Unpin>(
+        &self,
+        stream: &mut R,
+    ) {
         while let Some(sequence_number) = stream.next().await {
             let mut task_data = self.task_data.clone();
             let spawn_res = self.spawner.spawn(async move {
@@ -113,15 +178,13 @@ where
                 );
             }
         }
-
-        Ok(())
     }
 }
 
 impl<F, O> FetchTask<F, O>
 where
     F: MessageFetcher,
-    O: Sink<Vec<u8>> + Clone + Send + Sync + Unpin,
+    O: Sink<Vec<u8>> + Clone + Send + Unpin,
     O::Error: Debug,
 {
     pub fn new(fetcher: F, output_sink: O) -> Self {
@@ -147,6 +210,15 @@ where
         if let Err(send_err) = send_res {
             error!("failed to send fetched message to output stream {send_err:?}");
         }
+    }
+}
+
+impl<S, F> Stream for MessageStream<S, F> {
+    type Item = Vec<u8>;
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        let output_stream = &mut self.get_mut().output_stream;
+
+        Pin::new(output_stream).poll_next(cx)
     }
 }
 
@@ -190,6 +262,7 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
     struct MockSequenceNumberStreamer {
         sender: Arc<Mutex<UnboundedSender<SequenceNumber>>>,
         receiver: Arc<Mutex<UnboundedReceiver<SequenceNumber>>>,
@@ -232,7 +305,7 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
+    #[derive(Default, Debug)]
     struct MockMessageFetcher {
         messages: HashMap<SequenceNumber, Vec<u8>>,
     }
@@ -261,6 +334,7 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
     struct TokioSpawner;
     impl Spawn for TokioSpawner {
         type Cancel = CancelFnOnce;
@@ -292,20 +366,15 @@ mod tests {
     async fn test_messages_from_streamer_go_to_sink() {
         let mock_watcher = MockSequenceNumberStreamer::new();
         let mut mock_fetcher = MockMessageFetcher::new();
-        let (message_tx, mut message_rx) = mpsc::unbounded();
 
         let watcher_sender_mutex = mock_watcher.sender.clone();
         let mut watcher_sender = watcher_sender_mutex.lock().await;
 
         mock_fetcher.stage_message(SequenceNumber(123), "hello, world!");
 
-        let mut broker = Broker::new(mock_watcher, mock_fetcher, TokioSpawner, message_tx);
-        let join_handle = tokio::spawn(async move {
-            broker
-                .stream_incoming_messages_to_sink()
-                .await
-                .expect("stream failed");
-        });
+        let mut broker_handle = stream_incoming_messages(TokioSpawner, mock_watcher, mock_fetcher)
+            .await
+            .expect("failed to setup stream");
 
         watcher_sender
             .send(SequenceNumber(123))
@@ -313,11 +382,10 @@ mod tests {
             .expect("send failed");
 
         select! {
-            msg = message_rx.next() => assert_eq!(
+            msg = broker_handle.next().fuse() => assert_eq!(
                 "hello, world!".bytes().collect::<Vec<u8>>(),
                 msg.expect("empty channel"),
             ),
-            _ = join_handle.fuse() => panic!("broker returned, but did not receive message"),
             _ = Delay::new(Duration::from_secs(5)).fuse() => panic!("test timed out"),
         };
     }

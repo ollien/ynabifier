@@ -19,6 +19,7 @@ fn main() {
 
     runtime.block_on(async move {
         let mut stream = ynabifier::stream_new_messages(&TokioSpawner, config.imap().clone())
+            .await
             .expect("failed to setup stream");
         while let Some(msg) = stream.next().await {
             // This is perhaps not a sound assumption, but is fine for testing
