@@ -40,14 +40,14 @@ pub enum WatchError {
 }
 
 /// Holds any data that watch tasks may be accessed during a `Watcher`'s stream.
-struct WatchTaskData<G: SessionGenerator> {
+struct WatchTaskData<G> {
     session_generator: G,
     // atomics are used here so that I don't have to fiddle with a lock around the entire task
     stopped: AtomicBool,
 }
 
 /// Monitors an inbox for new messages, and sends their sequence numbers to listeners via a stream
-pub struct Watcher<G: SessionGenerator, S: Spawn> {
+pub struct Watcher<G, S: Spawn> {
     spawner: S,
     task_data: Arc<WatchTaskData<G>>,
     cancelers: Vec<S::Cancel>,

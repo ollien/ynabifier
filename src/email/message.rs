@@ -24,7 +24,7 @@ pub enum FetchError {
 }
 
 /// Fetches a message in its unadorned from the mail server
-pub struct RawFetcher<G: SessionGenerator> {
+pub struct RawFetcher<G> {
     session_generator: G,
 }
 

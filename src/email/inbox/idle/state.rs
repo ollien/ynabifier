@@ -3,7 +3,7 @@
 use super::traits::{Idler, IntoIdler};
 use async_imap::error::Result as IMAPResult;
 
-pub struct IdlerCell<I: Idler> {
+pub struct IdlerCell<I> {
     idler: I,
     prepared: bool,
 }
@@ -37,7 +37,7 @@ impl<I: Idler> IdlerCell<I> {
 /// Represents the state of a possibly iddling session, which may be able to produce an [`Idler`] or
 /// have already produced one.
 #[allow(clippy::module_name_repetitions)] // I think this is less clear called `Session`.
-pub enum SessionState<S: IntoIdler<OutputIdler = I>, I: Idler<DoneIdleable = S>> {
+pub enum SessionState<S, I> {
     Initialized(S),
     IdleReady(IdlerCell<I>),
 }
@@ -49,7 +49,7 @@ impl<S: IntoIdler<OutputIdler = I>, I: Idler<DoneIdleable = S>> SessionState<S, 
 }
 
 /// Holds a `SessionState` and allows progression between its various states.
-pub struct SessionCell<S: IntoIdler<OutputIdler = I>, I: Idler<DoneIdleable = S>> {
+pub struct SessionCell<S, I> {
     // semantically, this will never be `None` between method calls. It is required as an implementation detail
     // of `get_idle_handle`
     state: Option<SessionState<S, I>>,
