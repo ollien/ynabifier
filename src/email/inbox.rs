@@ -1,9 +1,9 @@
 //! The inbox module holds implementations to allow for the monitoring of a real inbox
 
 use self::idle::{SessionCell, SessionState};
-use super::{login::SessionGenerator, SequenceNumber, SequenceNumberStreamer};
+use super::{login::SessionGenerator, SequenceNumber};
 use crate::{
-    task::{Cancel, Spawn, SpawnError},
+    task::{Spawn, SpawnError},
     IMAPSession, IMAPTransportStream,
 };
 use async_imap::{
@@ -11,18 +11,13 @@ use async_imap::{
     extensions::idle::Handle,
     imap_proto::{MailboxDatum, Response},
 };
-use async_trait::async_trait;
 use futures::{
-    channel::mpsc::{self, Receiver, Sender},
-    SinkExt,
+    channel::mpsc::{self, Sender},
+    SinkExt, Stream,
 };
 use std::{
     fmt::Debug,
-    mem,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicBool, Ordering},
 };
 use thiserror::Error;
 
@@ -39,92 +34,57 @@ pub enum WatchError {
     SpawnError(SpawnError),
 }
 
-/// Holds any data that watch tasks may be accessed during a `Watcher`'s stream.
-struct WatchTaskData<G> {
-    session_generator: G,
-    // atomics are used here so that I don't have to fiddle with a lock around the entire task
-    stopped: AtomicBool,
-}
-
-/// Monitors an inbox for new messages, and sends their sequence numbers to listeners via a stream
-pub struct Watcher<G, S: Spawn> {
-    spawner: S,
-    task_data: Arc<WatchTaskData<G>>,
-    cancelers: Vec<S::Cancel>,
-}
-
-#[async_trait]
-impl<G, S> SequenceNumberStreamer for Watcher<G, S>
+pub async fn watch_for_new_messages<S, G, E>(
+    spawner: &S,
+    session_generator: E,
+) -> Result<impl Stream<Item = SequenceNumber>, WatchError>
 where
-    // unfortunately G must be 'static, since it is used in the task we spawn.
-    G: SessionGenerator + Send + Sync + 'static,
-    S: Spawn + Send,
+    S: Spawn + Sync,
+    G: SessionGenerator + Sync + Send,
+    E: AsRef<G> + Send + Sync + 'static,
 {
-    type Stream = Receiver<SequenceNumber>;
-    type Error = WatchError;
+    let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
+    // TODO: this session never does a log-out. We need some kind of async RAII for that
 
-    async fn watch_for_new_messages(&mut self) -> Result<Self::Stream, Self::Error> {
-        let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
-        // TODO: this session never does a log-out. We need some kind of async RAII for that
+    let mut session = session_generator
+        .as_ref()
+        .new_session()
+        .await
+        .map_err(WatchError::IMAPSetupError)?;
 
-        let mut session = self
-            .task_data
-            .session_generator
-            .new_session()
-            .await
-            .map_err(WatchError::IMAPSetupError)?;
+    session
+        .examine("INBOX")
+        .await
+        .map_err(WatchError::IMAPSetupError)?;
 
-        session
-            .examine("INBOX")
-            .await
-            .map_err(WatchError::IMAPSetupError)?;
-
-        let task = self.task_data.clone();
-        let watch_future = async move {
-            let mut tx = tx;
-            task.watch_for_new_emails(session, &mut tx).await;
-        };
-
-        let canceler = self
-            .spawner
-            .spawn(watch_future)
-            .map_err(WatchError::SpawnError)?;
-
-        self.cancelers.push(canceler);
-
-        Ok(rx)
-    }
-
-    fn stop(&mut self) {
-        info!("stopping...");
-        self.task_data.stopped.store(true, Ordering::Release);
-
-        debug!("stop flag set, signalling cancelers");
-        let cancelers = mem::take(&mut self.cancelers);
-        for canceler in cancelers {
-            canceler.cancel();
-        }
-        debug!("stop operations complete");
-    }
-}
-
-impl<G: SessionGenerator, S: Spawn> Watcher<G, S> {
-    /// `new` constructs a new `Watcher` that will send updates to the given Sender
-    pub fn new(session_generator: G, spawner: S) -> Self {
-        let task_data = WatchTaskData {
-            session_generator,
+    let watch_future = async move {
+        let task = WatchTask {
+            session_generator: session_generator.as_ref(),
             stopped: AtomicBool::new(false),
         };
 
-        Self {
-            task_data: Arc::new(task_data),
-            spawner,
-            cancelers: vec![],
-        }
-    }
+        let mut tx = tx;
+        task.watch_for_new_emails(session, &mut tx).await;
+    };
+
+    // TODO: use this
+    let canceler = spawner
+        .spawn(watch_future)
+        .map_err(WatchError::SpawnError)?;
+
+    Ok(rx)
 }
 
-impl<G: SessionGenerator> WatchTaskData<G> {
+/// Holds any data that watch tasks may be accessed during a `Watcher`'s stream.
+struct WatchTask<'a, G> {
+    session_generator: &'a G,
+    stopped: AtomicBool,
+}
+
+impl<'a, G> WatchTask<'a, G>
+where
+    G: SessionGenerator + Sync + 'a,
+{
     async fn watch_for_new_emails(
         &self,
         session: IMAPSession,
@@ -218,8 +178,8 @@ impl<G: SessionGenerator> WatchTaskData<G> {
         }
     }
 
-    async fn get_sequence_number_from_response<'a>(
-        response: &Response<'a>,
+    async fn get_sequence_number_from_response<'b>(
+        response: &Response<'b>,
     ) -> Option<SequenceNumber> {
         match response {
             Response::MailboxData(MailboxDatum::Exists(seq)) => Some(SequenceNumber(*seq)),
