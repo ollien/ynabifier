@@ -1,11 +1,10 @@
 use crate::{IMAPSession, SessionGenerator};
-use std::iter;
+use std::marker::PhantomData;
 
 use super::{MessageFetcher, SequenceNumber};
 use async_imap::{error::Error as IMAPError, types::Fetch};
 use async_trait::async_trait;
 use futures::StreamExt;
-use mailparse::MailParseError;
 use thiserror::Error;
 
 /// Indicates an error that occured during the fetch process
@@ -24,26 +23,31 @@ pub enum FetchError {
 }
 
 /// Fetches a message in its unadorned from the mail server
-pub struct RawFetcher<G> {
-    session_generator: G,
+pub struct RawFetcher<G, E> {
+    session_generator: E,
+    _phantom_generator: PhantomData<G>,
 }
 
-impl<G: SessionGenerator> RawFetcher<G> {
-    pub fn new(session_generator: G) -> Self {
-        Self { session_generator }
+impl<G, E> RawFetcher<G, E> {
+    pub fn new(session_generator: E) -> Self {
+        Self {
+            session_generator,
+            _phantom_generator: PhantomData,
+        }
     }
 }
 
 #[async_trait]
-impl<G> MessageFetcher for RawFetcher<G>
+impl<G, E> MessageFetcher for RawFetcher<G, E>
 where
-    G: SessionGenerator + Send + Sync + 'static,
+    G: SessionGenerator + Sync,
+    E: AsRef<G> + Sync + 'static, // we never move the reference itself between threads (only &self), so we don't need Send
 {
     type Error = FetchError;
 
     async fn fetch_message(&self, sequence_number: SequenceNumber) -> Result<Vec<u8>, Self::Error> {
-        // TODO: This could maybe be longer lived?
-        let mut session = generate_fetchable_session(&self.session_generator)
+        let session_gen = self.session_generator.as_ref();
+        let mut session = generate_fetchable_session(session_gen)
             .await
             .map_err(FetchError::IMAPSetupFailed)?;
 
@@ -86,21 +90,6 @@ async fn generate_fetchable_session<G: SessionGenerator>(
             Err(err)
         }
     }
-}
-
-fn get_message_parts<'a>(
-    message: &'a Fetch,
-) -> Result<Box<dyn Iterator<Item = Result<String, MailParseError>> + 'a>, MailParseError> {
-    let maybe_body = message.body();
-    if maybe_body.is_none() {
-        // no body means no message parts!
-        return Ok(Box::new(iter::empty()));
-    }
-
-    let parsed = mailparse::parse_mail(maybe_body.unwrap())?;
-    let part_iter = parsed.subparts.into_iter().map(|x| x.get_body());
-
-    Ok(Box::new(part_iter))
 }
 
 async fn best_effort_logout(session: &mut IMAPSession) {

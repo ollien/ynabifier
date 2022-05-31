@@ -40,8 +40,8 @@ pub async fn watch_for_new_messages<S, G, E>(
 ) -> Result<impl Stream<Item = SequenceNumber>, WatchError>
 where
     S: Spawn + Sync,
-    G: SessionGenerator + Sync + Send,
-    E: AsRef<G> + Send + Sync + 'static,
+    G: SessionGenerator + Sync,
+    E: AsRef<G> + Send + 'static,
 {
     let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
     // TODO: this session never does a log-out. We need some kind of async RAII for that

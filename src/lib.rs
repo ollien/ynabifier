@@ -3,6 +3,8 @@
 #[macro_use]
 extern crate log;
 
+use std::sync::Arc;
+
 use async_native_tls::TlsStream;
 use async_std::net::TcpStream;
 use thiserror::Error;
@@ -58,13 +60,12 @@ pub async fn stream_new_messages<S: Spawn + Send + Sync + Clone + 'static>(
     spawner: &S,
     imap_config: IMAPConfig,
 ) -> Result<impl Stream<Item = Vec<u8>>, StreamSetupError> {
-    // TODO: Instead of making multiple session generators, maybe these types could take an Arc
-    let make_session_generator = || ConfigSessionGenerator::new(imap_config.clone());
-    let watcher = email::inbox::watch_for_new_messages(spawner, Box::new(make_session_generator()))
+    let session_generator_arc = Arc::new(ConfigSessionGenerator::new(imap_config.clone()));
+    let watcher = email::inbox::watch_for_new_messages(spawner, session_generator_arc.clone())
         .await
         .map_err(StreamSetupError::WatchFailed)?;
 
-    let fetcher = RawFetcher::new(make_session_generator());
+    let fetcher = RawFetcher::new(session_generator_arc);
 
     let spawner_clone = spawner.clone();
     let fetch_stream = email::stream_incoming_messages(spawner_clone, watcher, fetcher).await?;
