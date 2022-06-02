@@ -59,7 +59,7 @@ impl From<email::StreamSetupError> for StreamSetupError {
 pub async fn stream_new_messages<S: Spawn + Send + Sync + Clone + 'static>(
     spawner: &S,
     imap_config: IMAPConfig,
-) -> Result<impl Stream<Item = Vec<u8>>, StreamSetupError> {
+) -> Result<impl Stream<Item = Vec<u8>> + Send, StreamSetupError> {
     let session_generator_arc = Arc::new(ConfigSessionGenerator::new(imap_config.clone()));
     let watcher = email::inbox::watch_for_new_messages(spawner, session_generator_arc.clone())
         .await
