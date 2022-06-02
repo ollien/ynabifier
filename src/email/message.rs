@@ -1,5 +1,5 @@
 use crate::{IMAPSession, SessionGenerator};
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
 use super::{MessageFetcher, SequenceNumber};
 use async_imap::{error::Error as IMAPError, types::Fetch};
@@ -23,25 +23,20 @@ pub enum FetchError {
 }
 
 /// Fetches a message in its unadorned from the mail server
-pub struct RawFetcher<G, E> {
-    session_generator: E,
-    _phantom_generator: PhantomData<G>,
+pub struct RawFetcher<G> {
+    session_generator: Arc<G>,
 }
 
-impl<G, E> RawFetcher<G, E> {
-    pub fn new(session_generator: E) -> Self {
-        Self {
-            session_generator,
-            _phantom_generator: PhantomData,
-        }
+impl<G> RawFetcher<G> {
+    pub fn new(session_generator: Arc<G>) -> Self {
+        Self { session_generator }
     }
 }
 
 #[async_trait]
-impl<G, E> MessageFetcher for RawFetcher<G, E>
-where
-    G: SessionGenerator + Sync,
-    E: AsRef<G> + Sync + 'static, // we never move the reference itself between threads (only &self), so we don't need Send
+impl<G> MessageFetcher for RawFetcher<G>
+where // These bounds are necssary due to the + Send bound `async_trait` provides on the return type.
+    G: SessionGenerator + Send + Sync,
 {
     type Error = FetchError;
 

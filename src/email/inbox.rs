@@ -17,7 +17,10 @@ use futures::{
 };
 use std::{
     fmt::Debug,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
 use thiserror::Error;
 
@@ -34,20 +37,18 @@ pub enum WatchError {
     SpawnError(SpawnError),
 }
 
-pub async fn watch_for_new_messages<S, G, E>(
+pub async fn watch_for_new_messages<S, G>(
     spawner: &S,
-    session_generator: E,
+    session_generator: Arc<G>,
 ) -> Result<impl Stream<Item = SequenceNumber>, WatchError>
 where
     S: Spawn + Sync,
-    G: SessionGenerator + Sync,
-    E: AsRef<G> + Send + 'static,
+    G: SessionGenerator + Sync + Send + 'static,
 {
     let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
     // TODO: this session never does a log-out. We need some kind of async RAII for that
 
     let mut session = session_generator
-        .as_ref()
         .new_session()
         .await
         .map_err(WatchError::IMAPSetupError)?;
@@ -59,7 +60,7 @@ where
 
     let watch_future = async move {
         let task = WatchTask {
-            session_generator: session_generator.as_ref(),
+            session_generator,
             stopped: AtomicBool::new(false),
         };
 
@@ -76,14 +77,14 @@ where
 }
 
 /// Holds any data that watch tasks may be accessed during a `Watcher`'s stream.
-struct WatchTask<'a, G> {
-    session_generator: &'a G,
+struct WatchTask<G> {
+    session_generator: Arc<G>,
     stopped: AtomicBool,
 }
 
-impl<'a, G> WatchTask<'a, G>
+impl<G> WatchTask<G>
 where
-    G: SessionGenerator + Sync + 'a,
+    G: SessionGenerator,
 {
     async fn watch_for_new_emails(
         &self,
