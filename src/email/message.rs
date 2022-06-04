@@ -1,5 +1,5 @@
 use crate::{IMAPSession, SessionGenerator};
-use std::{marker::PhantomData, sync::Arc};
+use std::sync::Arc;
 
 use super::{MessageFetcher, SequenceNumber};
 use async_imap::{error::Error as IMAPError, types::Fetch};
@@ -35,7 +35,8 @@ impl<G> RawFetcher<G> {
 
 #[async_trait]
 impl<G> MessageFetcher for RawFetcher<G>
-where // These bounds are necssary due to the + Send bound `async_trait` provides on the return type.
+where
+    // These bounds are necssary due to the + Send bound `async_trait` provides on the return type.
     G: SessionGenerator + Send + Sync,
 {
     type Error = FetchError;

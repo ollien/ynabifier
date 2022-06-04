@@ -71,10 +71,9 @@ pub enum StreamSetupError {
 /// # Errors
 /// If the stream cannot be set up (i.e. because the underlying task could not be set up for any reason), then it is
 /// returned.
-// TODO: Does this really need to take ownership?
 // TODO: Does this need to use StreamSetupError? It's an enum with one variant...
 pub async fn stream_incoming_messages<M, F, S>(
-    spawn: S,
+    spawn: Arc<S>,
     sequence_number_stream: M,
     fetcher: F,
 ) -> Result<MessageStream<S, F>, StreamSetupError>
@@ -82,7 +81,7 @@ where
     M: Stream<Item = SequenceNumber> + Send + Unpin + 'static,
     F: MessageFetcher + Send + Sync + 'static,
     F::Error: Send,
-    S: Spawn + Send + Sync + Clone + 'static,
+    S: Spawn + Send + Sync + 'static,
 {
     let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
     let broker = Arc::new(Broker::new(spawn.clone(), fetcher, tx));
@@ -117,7 +116,7 @@ struct FetchTask<F, O> {
 /// Broker acts as an intermediary that will take incoming sequence numbers, fetch these messages on background tasks,
 /// and return the results to a given output sink.
 struct Broker<S, F, O> {
-    spawner: S,
+    spawner: Arc<S>,
     task_data: FetchTask<F, O>,
 }
 
@@ -129,7 +128,7 @@ where
     O: Sink<Vec<u8>> + Send + Unpin + Clone + 'static,
     O::Error: Debug,
 {
-    fn new(spawner: S, fetcher: F, output_sink: O) -> Self {
+    fn new(spawner: Arc<S>, fetcher: F, output_sink: O) -> Self {
         Self {
             task_data: FetchTask::new(fetcher, output_sink),
             spawner,
@@ -272,7 +271,7 @@ mod tests {
         mock_fetcher.stage_message(SequenceNumber(123), "hello, world!");
 
         let mut broker_handle =
-            stream_incoming_messages(TokioSpawner, sequence_number_stream, mock_fetcher)
+            stream_incoming_messages(Arc::new(TokioSpawner), sequence_number_stream, mock_fetcher)
                 .await
                 .expect("failed to setup stream");
 
