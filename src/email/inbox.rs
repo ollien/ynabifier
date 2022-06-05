@@ -3,7 +3,7 @@
 use self::idle::{SessionCell, SessionState};
 use super::{login::SessionGenerator, SequenceNumber};
 use crate::{
-    task::{Spawn, SpawnError},
+    task::{Cancel, Spawn, SpawnError},
     IMAPSession, IMAPTransportStream,
 };
 use async_imap::{
@@ -12,15 +12,18 @@ use async_imap::{
     imap_proto::{MailboxDatum, Response},
 };
 use futures::{
-    channel::mpsc::{self, Sender},
+    channel::mpsc::{self, Receiver, Sender},
     SinkExt, Stream,
 };
+use serde_yaml::Sequence;
 use std::{
     fmt::Debug,
+    pin::Pin,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Weak,
     },
+    task::{Context, Poll},
 };
 use thiserror::Error;
 
@@ -43,6 +46,7 @@ pub async fn watch_for_new_messages<S, G>(
 ) -> Result<impl Stream<Item = SequenceNumber>, WatchError>
 where
     S: Spawn + Sync,
+    S::Cancel: Unpin,
     G: SessionGenerator + Sync + Send + 'static,
 {
     let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
@@ -58,28 +62,80 @@ where
         .await
         .map_err(WatchError::IMAPSetupError)?;
 
+    let stop_flag = Arc::new(AtomicBool::new(false));
+    let weak_stop_flag = Arc::downgrade(&stop_flag);
     let watch_future = async move {
         let task = WatchTask {
             session_generator,
-            stopped: AtomicBool::new(false),
+            stopped: stop_flag,
         };
 
         let mut tx = tx;
         task.watch_for_new_emails(session, &mut tx).await;
     };
 
-    // TODO: use this
     let canceler = spawner
         .spawn(watch_future)
         .map_err(WatchError::SpawnError)?;
 
-    Ok(rx)
+    let stream = SequeneceNumberStream::new(rx, weak_stop_flag, canceler);
+
+    Ok(stream)
+}
+
+struct SequeneceNumberStream<C: Cancel> {
+    output_stream: Receiver<SequenceNumber>,
+    stop_flag: Weak<AtomicBool>,
+    // NOTE: This will always be Some, except in truly exceptional cases.
+    // It is only Option so that Drop can be implemented safely.
+    task_cancel: Option<C>,
+}
+
+impl<C: Cancel> SequeneceNumberStream<C> {
+    pub fn new(
+        output_stream: Receiver<SequenceNumber>,
+        stop_flag: Weak<AtomicBool>,
+        task_cancel: C,
+    ) -> Self {
+        Self {
+            output_stream,
+            stop_flag,
+            task_cancel: Some(task_cancel),
+        }
+    }
+}
+
+impl<C: Cancel + Unpin> Stream for SequeneceNumberStream<C> {
+    type Item = SequenceNumber;
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let output_stream = &mut self.get_mut().output_stream;
+
+        Pin::new(output_stream).poll_next(cx)
+    }
+}
+
+impl<C: Cancel> Drop for SequeneceNumberStream<C> {
+    fn drop(&mut self) {
+        info!("Inbox stream is shutting down");
+
+        if let Some(stop_flag) = self.stop_flag.upgrade() {
+            stop_flag.store(true, Ordering::Release);
+        } else {
+            dbg!("stop_flag was no longer present on Drop of SequenceNumberStream");
+        }
+
+        if let Some(cancel) = std::mem::take(&mut self.task_cancel) {
+            cancel.cancel();
+        } else {
+            dbg!("task_cancel was nil on Drop of SequenceNumberStream");
+        }
+    }
 }
 
 /// Holds any data that watch tasks may be accessed during a `Watcher`'s stream.
 struct WatchTask<G> {
     session_generator: Arc<G>,
-    stopped: AtomicBool,
+    stopped: Arc<AtomicBool>,
 }
 
 impl<G> WatchTask<G>

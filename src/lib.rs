@@ -56,10 +56,14 @@ impl From<email::StreamSetupError> for StreamSetupError {
 /// # Errors
 /// Will return a [`StreamSetupError`] if there was any failure in constructing the stream. See its docs
 /// for more details.
-pub async fn stream_new_messages<S: Spawn + Send + Sync + 'static>(
+pub async fn stream_new_messages<S>(
     spawner: Arc<S>,
     imap_config: IMAPConfig,
-) -> Result<impl Stream<Item = Vec<u8>> + Send, StreamSetupError> {
+) -> Result<impl Stream<Item = Vec<u8>> + Send, StreamSetupError>
+where
+    S: Spawn + Send + Sync + 'static,
+    S::Cancel: Unpin,
+{
     let session_generator_arc = Arc::new(ConfigSessionGenerator::new(imap_config.clone()));
     let watcher =
         email::inbox::watch_for_new_messages(spawner.as_ref(), session_generator_arc.clone())
