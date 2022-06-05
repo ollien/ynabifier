@@ -1,6 +1,6 @@
 use futures::{
     channel::mpsc::{self, Receiver},
-    lock::{self, Mutex},
+    lock::Mutex,
     Sink, SinkExt, Stream, StreamExt,
 };
 use std::{
@@ -13,7 +13,7 @@ use std::{
 use thiserror::Error;
 
 use crate::{
-    task::{MultiCancel, Spawn, SpawnError},
+    task::{Cancel, CancelOnDrop, MultiCancel, Spawn, SpawnError},
     CHANNEL_SIZE,
 };
 
@@ -65,9 +65,9 @@ pub enum StreamSetupError {
 }
 
 /// `MessageStream` is a stream of any messages returned from `stream_incoming_messages`.
-pub struct MessageStream {
+pub struct MessageStream<S: Spawn + Send + Sync> {
     output_stream: Receiver<Vec<u8>>,
-    fetch_cancel: Arc<Mutex<MultiCancel>>,
+    _cancel_guard: CancelOnDrop<StreamCancel<S>>,
 }
 
 /// Get a stream of any messages that come into the given [`SequenceNumberStraemer`]. These messsages will be fetched
@@ -82,7 +82,7 @@ pub async fn stream_incoming_messages<M, F, S>(
     spawn: Arc<S>,
     sequence_number_stream: M,
     fetcher: F,
-) -> Result<MessageStream, StreamSetupError>
+) -> Result<MessageStream<S>, StreamSetupError>
 where
     M: Stream<Item = SequenceNumber> + Send + Unpin + 'static,
     F: MessageFetcher + Send + Sync + 'static,
@@ -93,6 +93,7 @@ where
     let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
 
     let spawn_clone = spawn.clone();
+    // need some way to wrap this...
     let fetch_cancel = Arc::new(Mutex::new(MultiCancel::new()));
     let fetch_cancel_clone = fetch_cancel.clone();
     let cancel = spawn
@@ -109,16 +110,22 @@ where
         })
         .map_err(StreamSetupError::SpawnFailed)?;
 
-    // wrap in a scope so we can force the drop of the mutex guard
-    {
-        let mut locked_fetch_cancel = fetch_cancel.lock().await;
-        locked_fetch_cancel.insert(Box::new(cancel));
-    }
+    let stream_cancel = StreamCancel {
+        spawn,
+        fetch_cancel,
+        stream_parent_cancel: cancel,
+    };
 
     Ok(MessageStream {
         output_stream: rx,
-        fetch_cancel,
+        _cancel_guard: CancelOnDrop::new(stream_cancel),
     })
+}
+
+struct StreamCancel<S: Spawn> {
+    fetch_cancel: Arc<Mutex<MultiCancel>>,
+    spawn: Arc<S>,
+    stream_parent_cancel: S::Cancel,
 }
 
 struct StreamTask<F, O> {
@@ -132,6 +139,28 @@ struct StreamTask<F, O> {
 struct FetchTask<F, O> {
     fetcher: Arc<F>,
     output_sink: O,
+}
+
+impl<S: Spawn + Send + Sync> Cancel for StreamCancel<S> {
+    fn cancel(self) {
+        info!("Cancelling message stream and fetch tasks");
+        self.stream_parent_cancel.cancel();
+        // This isn't my favorite, but there's no other great way to lock this mutex unless
+        // we want to busy wait.
+        let spawn_res = self.spawn.spawn(async move {
+            let mut locked_cancel = self.fetch_cancel.lock().await;
+            locked_cancel.cancel_all();
+        });
+
+        // We can't return a spawn error here, so we log our failures instead
+        if let Err(spawn_err) = spawn_res {
+            error!("failed to spawn task to cancel existing fetch tasks: {spawn_err}");
+        }
+    }
+
+    fn cancel_boxed(self: Box<Self>) {
+        self.cancel();
+    }
 }
 
 impl<F, O> StreamTask<F, O>
@@ -203,27 +232,11 @@ where
     }
 }
 
-impl Drop for MessageStream {
-    fn drop(&mut self) {
-        info!("Message fetch stream is shutting down");
-        let mut attempts = 0;
-        // TODO: this _SUCKS_. We should see if we can avoid this as much as possible.
-        loop {
-            match self.fetch_cancel.try_lock() {
-                Some(mut fetch_cancel) => {
-                    fetch_cancel.cancel_all();
-                    return;
-                }
-                None => {
-                    attempts += 1;
-                    debug!("failed to acquire lock to cancel fetch tasks on attempt {attempts}");
-                }
-            }
-        }
-    }
-}
-
-impl Stream for MessageStream {
+impl<S> Stream for MessageStream<S>
+where
+    S: Spawn + Send + Sync + Unpin,
+    S::Cancel: Unpin,
+{
     type Item = Vec<u8>;
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         let output_stream = &mut self.get_mut().output_stream;

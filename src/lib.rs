@@ -61,7 +61,7 @@ pub async fn stream_new_messages<S>(
     imap_config: IMAPConfig,
 ) -> Result<impl Stream<Item = Vec<u8>> + Send, StreamSetupError>
 where
-    S: Spawn + Send + Sync + 'static,
+    S: Spawn + Send + Sync + Unpin + 'static,
     S::Cancel: Unpin + 'static,
 {
     let session_generator_arc = Arc::new(ConfigSessionGenerator::new(imap_config.clone()));

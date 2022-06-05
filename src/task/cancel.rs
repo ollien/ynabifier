@@ -48,6 +48,7 @@ impl Cancel for Multi {
     }
 }
 
+/// Wraps a given [`Cancel`] and will perform the cancellation on drop.
 pub struct OnDrop<C: Cancel> {
     // Option specifically so we can call Cancel in Drop, but really this will always be Some
     cancel: Option<C>,
