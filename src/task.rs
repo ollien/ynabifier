@@ -1,7 +1,10 @@
+pub use cancel::{Cancel, Multi as MultiCancel};
 use std::fmt::{Display, Formatter};
 
 use futures::Future;
 use thiserror::Error;
+
+mod cancel;
 
 /// `SpawnError` describes why a spawn may have failed to occur.
 #[derive(Error, Debug)]
@@ -27,8 +30,4 @@ pub trait Spawn {
     fn spawn<F: Future + Send + 'static>(&self, future: F) -> Result<Self::Cancel, SpawnError>
     where
         <F as Future>::Output: Send;
-}
-
-pub trait Cancel {
-    fn cancel(self);
 }
