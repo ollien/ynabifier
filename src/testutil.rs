@@ -32,6 +32,6 @@ impl Cancel for CancelFnOnce {
     }
 
     fn cancel_boxed(self: Box<Self>) {
-        self.cancel()
+        self.cancel();
     }
 }

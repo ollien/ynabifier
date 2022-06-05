@@ -15,7 +15,6 @@ use futures::{
     channel::mpsc::{self, Receiver, Sender},
     SinkExt, Stream,
 };
-use serde_yaml::Sequence;
 use std::{
     fmt::Debug,
     pin::Pin,

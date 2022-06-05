@@ -1,6 +1,6 @@
 use futures::{
-    channel::mpsc::{self, Receiver, Sender},
-    lock::Mutex,
+    channel::mpsc::{self, Receiver},
+    lock::{self, Mutex},
     Sink, SinkExt, Stream, StreamExt,
 };
 use std::{
@@ -13,7 +13,7 @@ use std::{
 use thiserror::Error;
 
 use crate::{
-    task::{Spawn, SpawnError},
+    task::{MultiCancel, Spawn, SpawnError},
     CHANNEL_SIZE,
 };
 
@@ -67,6 +67,7 @@ pub enum StreamSetupError {
 /// `MessageStream` is a stream of any messages returned from `stream_incoming_messages`.
 pub struct MessageStream {
     output_stream: Receiver<Vec<u8>>,
+    fetch_cancel: Arc<Mutex<MultiCancel>>,
 }
 
 /// Get a stream of any messages that come into the given [`SequenceNumberStraemer`]. These messsages will be fetched
@@ -87,63 +88,97 @@ where
     F: MessageFetcher + Send + Sync + 'static,
     F::Error: Sync + Send,
     S: Spawn + Send + Sync + 'static,
+    S::Cancel: 'static,
 {
     let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
 
     let spawn_clone = spawn.clone();
-    // TODO: We should use this
-    let canceler = spawn
+    let fetch_cancel = Arc::new(Mutex::new(MultiCancel::new()));
+    let fetch_cancel_clone = fetch_cancel.clone();
+    let cancel = spawn
         .spawn(async move {
-            stream_incoming_messages_to_sink(spawn_clone, sequence_number_stream, fetcher, tx)
+            let mut stream_task = StreamTask {
+                fetcher: Arc::new(fetcher),
+                fetch_cancel: fetch_cancel_clone,
+                output_sink: tx,
+            };
+
+            stream_task
+                .stream_incoming_messages_to_sink(spawn_clone, sequence_number_stream)
                 .await;
         })
         .map_err(StreamSetupError::SpawnFailed)?;
 
-    Ok(MessageStream { output_stream: rx })
+    // wrap in a scope so we can force the drop of the mutex guard
+    {
+        let mut locked_fetch_cancel = fetch_cancel.lock().await;
+        locked_fetch_cancel.insert(Box::new(cancel));
+    }
+
+    Ok(MessageStream {
+        output_stream: rx,
+        fetch_cancel,
+    })
 }
 
-/// Fetch any messages from the incoming stream of sequence numbers, and send them to the output sink.
-///
-/// # Errors
-/// Returns an error if there was a problem in setting up the stream. Individual message failures
-/// will be logged.
-async fn stream_incoming_messages_to_sink<S, N, F, O>(
-    spawner: Arc<S>,
-    mut sequence_number_stream: N,
-    fetcher: F,
+struct StreamTask<F, O> {
+    fetcher: Arc<F>,
     output_sink: O,
-) where
-    S: Spawn,
-    N: Stream<Item = SequenceNumber> + Unpin,
-    F: MessageFetcher + Send + Sync + 'static,
-    F::Error: Send + Sync,
-    O: Sink<Vec<u8>> + Send + Unpin + Clone + 'static,
-    O::Error: Debug,
-{
-    let fetcher_arc = Arc::new(fetcher);
-    while let Some(sequence_number) = sequence_number_stream.next().await {
-        let fetcher_arc_clone = fetcher_arc.clone();
-        let output_sink_clone = output_sink.clone();
-        // TODO: We should use this for cancellation
-        let spawn_res = spawner.spawn(async move {
-            let mut fetch_task = FetchTask {
-                fetcher: fetcher_arc_clone,
-                output_sink: output_sink_clone,
-            };
-
-            fetch_task.fetch_and_sink_message(sequence_number).await;
-        });
-        if let Err(spawn_err) = spawn_res {
-            error!(
-                "failed to spawn task to fetch sequence number {sequence_number}: {spawn_err:?}",
-            );
-        }
-    }
+    // fetch_cancel is used in StreamTask simply to collect tasks to cancel from MessageSttream
+    // (theoretically, this could use message passing but it's a bunch of complexity for not a ton of gain)
+    fetch_cancel: Arc<Mutex<MultiCancel>>,
 }
 
 struct FetchTask<F, O> {
     fetcher: Arc<F>,
     output_sink: O,
+}
+
+impl<F, O> StreamTask<F, O>
+where
+    F: MessageFetcher + Send + Sync + 'static,
+    F::Error: Send + Sync,
+    O: Sink<Vec<u8>> + Send + Unpin + Clone + 'static,
+    O::Error: Debug,
+{
+    /// Fetch any messages from the incoming stream of sequence numbers, and send them to the output sink.
+    ///
+    /// # Errors
+    /// Returns an error if there was a problem in setting up the stream. Individual message failures
+    /// will be logged.
+    async fn stream_incoming_messages_to_sink<S, N>(
+        &mut self,
+        spawner: Arc<S>,
+        mut sequence_number_stream: N,
+    ) where
+        S: Spawn,
+        S::Cancel: 'static,
+        N: Stream<Item = SequenceNumber> + Unpin,
+    {
+        while let Some(sequence_number) = sequence_number_stream.next().await {
+            let fetcher_arc_clone = self.fetcher.clone();
+            let output_sink_clone = self.output_sink.clone();
+            // TODO: We should use this for cancellation
+            let spawn_res = spawner.spawn(async move {
+                let mut fetch_task = FetchTask {
+                    fetcher: fetcher_arc_clone,
+                    output_sink: output_sink_clone,
+                };
+
+                fetch_task.fetch_and_sink_message(sequence_number).await;
+            });
+
+            match spawn_res {
+                Ok(cancel) => {
+                    let mut locked_fetch_cancel = self.fetch_cancel.lock().await;
+                    locked_fetch_cancel.insert(Box::new(cancel));
+                }
+                Err(spawn_err) => error!(
+                    "failed to spawn task to fetch sequence number {sequence_number}: {spawn_err:?}",
+                ),
+            }
+        }
+    }
 }
 
 impl<F, O> FetchTask<F, O>
@@ -154,7 +189,7 @@ where
 {
     /// Fetch a message with the given sequence number, and send its output to this Task's
     /// output sink. Errors for this are logged, as this is intended to be run in a forked off task.
-    async fn fetch_and_sink_message(&mut self, sequence_number: SequenceNumber) {
+    pub async fn fetch_and_sink_message(&mut self, sequence_number: SequenceNumber) {
         let fetch_result = self.fetcher.fetch_message(sequence_number).await;
         if let Err(fetch_err) = fetch_result {
             error!("failed to fetch message: {:?}", fetch_err);
@@ -165,6 +200,26 @@ where
         let send_res = self.output_sink.send(msg).await;
         if let Err(send_err) = send_res {
             error!("failed to send fetched message to output stream {send_err:?}");
+        }
+    }
+}
+
+impl Drop for MessageStream {
+    fn drop(&mut self) {
+        info!("Message fetch stream is shutting down");
+        let mut attempts = 0;
+        // TODO: this _SUCKS_. We should see if we can avoid this as much as possible.
+        loop {
+            match self.fetch_cancel.try_lock() {
+                Some(mut fetch_cancel) => {
+                    fetch_cancel.cancel_all();
+                    return;
+                }
+                None => {
+                    attempts += 1;
+                    debug!("failed to acquire lock to cancel fetch tasks on attempt {attempts}");
+                }
+            }
         }
     }
 }

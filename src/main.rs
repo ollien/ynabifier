@@ -1,7 +1,8 @@
 use futures::{stream::StreamExt, Future};
 use log::LevelFilter;
 use simplelog::{Config as LogConfig, SimpleLogger};
-use std::fs::File;
+use std::thread;
+use std::{fs::File, sync::Arc};
 use tokio::runtime::Runtime;
 use ynabifier::{
     task::{Cancel, Spawn, SpawnError},
@@ -17,14 +18,20 @@ fn main() {
     let runtime = Runtime::new().expect("failed to create runtime");
 
     runtime.block_on(async move {
-        let mut stream = ynabifier::stream_new_messages(&TokioSpawner, config.imap().clone())
-            .await
-            .expect("failed to setup stream");
-        while let Some(msg) = stream.next().await {
-            // This is perhaps not a sound assumption, but is fine for testing
-            dbg!(String::from_utf8(msg));
+        {
+            let mut stream =
+                ynabifier::stream_new_messages(Arc::new(TokioSpawner), config.imap().clone())
+                    .await
+                    .expect("failed to setup stream");
+            if let Some(msg) = stream.next().await {
+                // This is perhaps not a sound assumption, but is fine for testing
+                dbg!(String::from_utf8(msg));
+            }
+            drop(stream);
         }
-    })
+    });
+
+    thread::sleep_ms(10000);
 }
 
 #[derive(Clone)]
@@ -52,5 +59,9 @@ struct CancelFnOnce {
 impl Cancel for CancelFnOnce {
     fn cancel(self) {
         (self.cancel_func)()
+    }
+
+    fn cancel_boxed(self: Box<Self>) {
+        self.cancel()
     }
 }

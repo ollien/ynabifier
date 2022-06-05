@@ -15,7 +15,7 @@ pub trait Cancel {
 /// when many subtasks are spawned, and one may want to cancel all of the tasks associated with it.
 #[derive(Default)]
 pub struct Multi {
-    cancels: Vec<Box<dyn Cancel>>,
+    cancels: Vec<Box<dyn Cancel + Send>>,
 }
 
 impl Multi {
@@ -24,7 +24,7 @@ impl Multi {
     }
 
     /// Insert a new [`Cancel`] into the Multi
-    pub fn insert(&mut self, cancel: Box<dyn Cancel>) {
+    pub fn insert(&mut self, cancel: Box<dyn Cancel + Send>) {
         self.cancels.push(cancel);
     }
 
@@ -38,17 +38,17 @@ impl Multi {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::sync::{Arc, Mutex};
 
     use super::*;
 
     struct CancelCounter {
-        count: Rc<RefCell<u16>>,
+        count: Arc<Mutex<u16>>,
     }
 
     impl Cancel for CancelCounter {
         fn cancel(self) {
-            *self.count.borrow_mut() += 1;
+            *self.count.lock().unwrap() += 1;
         }
 
         fn cancel_boxed(self: Box<Self>) {
@@ -60,7 +60,9 @@ mod tests {
     fn test_cancels_all() {
         let mut multi = Multi::new();
 
-        let cancel_count = Rc::new(RefCell::new(0_u16));
+        // Though there isn't more than one thread, we use a Mutex for interior mutability so we can satisfy Send.
+        // (RefCell is Send, but Arc is not unless the interior is both Send and Sync)
+        let cancel_count = Arc::new(Mutex::new(0_u16));
         let cancels = vec![
             CancelCounter {
                 count: cancel_count.clone(),
@@ -78,6 +80,6 @@ mod tests {
         }
 
         multi.cancel_all();
-        assert_eq!(3, *cancel_count.borrow());
+        assert_eq!(3, *cancel_count.lock().unwrap());
     }
 }
