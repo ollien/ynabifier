@@ -1,4 +1,4 @@
-pub use cancel::{Cancel, Multi as MultiCancel};
+pub use cancel::{Cancel, Multi as MultiCancel, OnDrop as CancelOnDrop};
 use std::fmt::{Display, Formatter};
 
 use futures::Future;

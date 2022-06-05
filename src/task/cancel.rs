@@ -1,4 +1,6 @@
 //! Provides utilities for canceling tasks
+//!
+use std::mem;
 
 /// Cancel represents a task that can be cancelled
 pub trait Cancel {
@@ -36,6 +38,40 @@ impl Multi {
     }
 }
 
+impl Cancel for Multi {
+    fn cancel(mut self) {
+        self.cancel_all();
+    }
+
+    fn cancel_boxed(self: Box<Self>) {
+        self.cancel();
+    }
+}
+
+pub struct OnDrop<C: Cancel> {
+    // Option specifically so we can call Cancel in Drop, but really this will always be Some
+    cancel: Option<C>,
+}
+
+impl<C: Cancel + Send> OnDrop<C> {
+    pub fn new(cancel: C) -> Self {
+        Self {
+            cancel: Some(cancel),
+        }
+    }
+}
+
+impl<C: Cancel> Drop for OnDrop<C> {
+    fn drop(&mut self) {
+        let maybe_cancel = mem::take(&mut self.cancel);
+        if let Some(cancel) = maybe_cancel {
+            cancel.cancel();
+        } else {
+            debug!("cancel was None on drop; ignoring...");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
@@ -57,7 +93,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cancels_all() {
+    fn test_multi_cancels_all() {
         let mut multi = Multi::new();
 
         // Though there isn't more than one thread, we use a Mutex for interior mutability so we can satisfy Send.
@@ -81,5 +117,20 @@ mod tests {
 
         multi.cancel_all();
         assert_eq!(3, *cancel_count.lock().unwrap());
+    }
+
+    #[test]
+    fn test_cancel_on_drop() {
+        let cancel_count = Arc::new(Mutex::new(0_u16));
+        let cancel = CancelCounter {
+            count: cancel_count.clone(),
+        };
+
+        {
+            assert_eq!(0, *cancel_count.lock().unwrap());
+            let _drop_cancel = OnDrop::new(cancel);
+        }
+
+        assert_eq!(1, *cancel_count.lock().unwrap());
     }
 }

@@ -158,7 +158,6 @@ where
         while let Some(sequence_number) = sequence_number_stream.next().await {
             let fetcher_arc_clone = self.fetcher.clone();
             let output_sink_clone = self.output_sink.clone();
-            // TODO: We should use this for cancellation
             let spawn_res = spawner.spawn(async move {
                 let mut fetch_task = FetchTask {
                     fetcher: fetcher_arc_clone,
