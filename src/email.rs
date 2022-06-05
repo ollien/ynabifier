@@ -64,6 +64,11 @@ pub enum StreamSetupError {
     SpawnFailed(SpawnError),
 }
 
+/// `MessageStream` is a stream of any messages returned from `stream_incoming_messages`.
+pub struct MessageStream {
+    output_stream: Receiver<Vec<u8>>,
+}
+
 /// Get a stream of any messages that come into the given [`SequenceNumberStraemer`]. These messsages will be fetched
 /// by sequence number using the given [`MessageFetcher`]. This requires spawning several background tasks, so a
 /// [`Spawn`] is also required.
@@ -76,107 +81,81 @@ pub async fn stream_incoming_messages<M, F, S>(
     spawn: Arc<S>,
     sequence_number_stream: M,
     fetcher: F,
-) -> Result<MessageStream<S, F>, StreamSetupError>
+) -> Result<MessageStream, StreamSetupError>
 where
     M: Stream<Item = SequenceNumber> + Send + Unpin + 'static,
     F: MessageFetcher + Send + Sync + 'static,
-    F::Error: Send,
+    F::Error: Sync + Send,
     S: Spawn + Send + Sync + 'static,
 {
     let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
-    let broker = Arc::new(Broker::new(spawn.clone(), fetcher, tx));
-    let broker_arc_clone = broker.clone();
-    spawn
+
+    let spawn_clone = spawn.clone();
+    // TODO: We should use this
+    let canceler = spawn
         .spawn(async move {
-            let mut message_stream = sequence_number_stream;
-            broker_arc_clone
-                .stream_incoming_messages_to_sink(&mut message_stream)
+            stream_incoming_messages_to_sink(spawn_clone, sequence_number_stream, fetcher, tx)
                 .await;
         })
         .map_err(StreamSetupError::SpawnFailed)?;
 
-    Ok(MessageStream {
-        _broker: broker,
-        output_stream: rx,
-    })
+    Ok(MessageStream { output_stream: rx })
 }
 
-/// `MessageStream` is a stream of any messages returned from `stream_incoming_messages`.
-// TODO: add some kind of `stop` method to this.
-pub struct MessageStream<S, F> {
-    _broker: Arc<Broker<S, F, Sender<Vec<u8>>>>,
-    output_stream: Receiver<Vec<u8>>,
-}
-
-struct FetchTask<F, O> {
-    fetcher: Arc<Mutex<F>>,
-    output_sink: O,
-}
-
-/// Broker acts as an intermediary that will take incoming sequence numbers, fetch these messages on background tasks,
-/// and return the results to a given output sink.
-struct Broker<S, F, O> {
+/// Fetch any messages from the incoming stream of sequence numbers, and send them to the output sink.
+///
+/// # Errors
+/// Returns an error if there was a problem in setting up the stream. Individual message failures
+/// will be logged.
+async fn stream_incoming_messages_to_sink<S, N, F, O>(
     spawner: Arc<S>,
-    task_data: FetchTask<F, O>,
-}
-
-impl<S, F, O> Broker<S, F, O>
-where
-    F: MessageFetcher + Send + Sync + 'static,
-    F::Error: Send,
+    mut sequence_number_stream: N,
+    fetcher: F,
+    output_sink: O,
+) where
     S: Spawn,
+    N: Stream<Item = SequenceNumber> + Unpin,
+    F: MessageFetcher + Send + Sync + 'static,
+    F::Error: Send + Sync,
     O: Sink<Vec<u8>> + Send + Unpin + Clone + 'static,
     O::Error: Debug,
 {
-    fn new(spawner: Arc<S>, fetcher: F, output_sink: O) -> Self {
-        Self {
-            task_data: FetchTask::new(fetcher, output_sink),
-            spawner,
-        }
-    }
+    let fetcher_arc = Arc::new(fetcher);
+    while let Some(sequence_number) = sequence_number_stream.next().await {
+        let fetcher_arc_clone = fetcher_arc.clone();
+        let output_sink_clone = output_sink.clone();
+        // TODO: We should use this for cancellation
+        let spawn_res = spawner.spawn(async move {
+            let mut fetch_task = FetchTask {
+                fetcher: fetcher_arc_clone,
+                output_sink: output_sink_clone,
+            };
 
-    /// Fetch any messages from the incoming stream of sequence numbers, and send them to the output sink.
-    ///
-    /// # Errors
-    /// Returns an error if there was a problem in setting up the stream. Individual message failures
-    /// will be logged.
-    async fn stream_incoming_messages_to_sink<N: Stream<Item = SequenceNumber> + Unpin>(
-        &self,
-        stream: &mut N,
-    ) {
-        while let Some(sequence_number) = stream.next().await {
-            let mut task_data = self.task_data.clone();
-            let spawn_res = self.spawner.spawn(async move {
-                task_data.fetch_and_sink_message(sequence_number).await;
-            });
-            if let Err(spawn_err) = spawn_res {
-                error!(
-                    "failed to spawn task to fetch sequence number {sequence_number}: {spawn_err:?}",
-                );
-            }
+            fetch_task.fetch_and_sink_message(sequence_number).await;
+        });
+        if let Err(spawn_err) = spawn_res {
+            error!(
+                "failed to spawn task to fetch sequence number {sequence_number}: {spawn_err:?}",
+            );
         }
     }
+}
+
+struct FetchTask<F, O> {
+    fetcher: Arc<F>,
+    output_sink: O,
 }
 
 impl<F, O> FetchTask<F, O>
 where
     F: MessageFetcher,
-    O: Sink<Vec<u8>> + Clone + Send + Unpin,
+    O: Sink<Vec<u8>> + Send + Unpin + Clone + 'static,
     O::Error: Debug,
 {
-    pub fn new(fetcher: F, output_sink: O) -> Self {
-        Self {
-            fetcher: Arc::new(Mutex::new(fetcher)),
-            output_sink,
-        }
-    }
-
     /// Fetch a message with the given sequence number, and send its output to this Task's
     /// output sink. Errors for this are logged, as this is intended to be run in a forked off task.
-    pub async fn fetch_and_sink_message(&mut self, sequence_number: SequenceNumber) {
-        let fetcher = self.fetcher.lock().await;
-
-        let fetch_result = fetcher.fetch_message(sequence_number).await;
+    async fn fetch_and_sink_message(&mut self, sequence_number: SequenceNumber) {
+        let fetch_result = self.fetcher.fetch_message(sequence_number).await;
         if let Err(fetch_err) = fetch_result {
             error!("failed to fetch message: {:?}", fetch_err);
             return;
@@ -190,22 +169,12 @@ where
     }
 }
 
-impl<S, F> Stream for MessageStream<S, F> {
+impl Stream for MessageStream {
     type Item = Vec<u8>;
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         let output_stream = &mut self.get_mut().output_stream;
 
         Pin::new(output_stream).poll_next(cx)
-    }
-}
-
-impl<F: MessageFetcher, O: Sink<Vec<u8>> + Clone> Clone for FetchTask<F, O> {
-    fn clone(&self) -> Self {
-        Self {
-            // because `fetcher` is wrapped in an Arc, we must derive Clone manually.
-            fetcher: self.fetcher.clone(),
-            output_sink: self.output_sink.clone(),
-        }
     }
 }
 
