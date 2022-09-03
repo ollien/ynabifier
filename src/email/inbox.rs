@@ -77,12 +77,12 @@ where
         .spawn(watch_future)
         .map_err(WatchError::SpawnError)?;
 
-    let stream = SequeneceNumberStream::new(rx, weak_stop_flag, canceler);
+    let stream = SequenceNumberStream::new(rx, weak_stop_flag, canceler);
 
     Ok(stream)
 }
 
-struct SequeneceNumberStream<C: Cancel> {
+struct SequenceNumberStream<C: Cancel> {
     output_stream: Receiver<SequenceNumber>,
     stop_flag: Weak<AtomicBool>,
     // NOTE: This will always be Some, except in truly exceptional cases.
@@ -90,7 +90,7 @@ struct SequeneceNumberStream<C: Cancel> {
     task_cancel: Option<C>,
 }
 
-impl<C: Cancel> SequeneceNumberStream<C> {
+impl<C: Cancel> SequenceNumberStream<C> {
     pub fn new(
         output_stream: Receiver<SequenceNumber>,
         stop_flag: Weak<AtomicBool>,
@@ -104,7 +104,7 @@ impl<C: Cancel> SequeneceNumberStream<C> {
     }
 }
 
-impl<C: Cancel + Unpin> Stream for SequeneceNumberStream<C> {
+impl<C: Cancel + Unpin> Stream for SequenceNumberStream<C> {
     type Item = SequenceNumber;
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let output_stream = &mut self.get_mut().output_stream;
@@ -113,7 +113,7 @@ impl<C: Cancel + Unpin> Stream for SequeneceNumberStream<C> {
     }
 }
 
-impl<C: Cancel> Drop for SequeneceNumberStream<C> {
+impl<C: Cancel> Drop for SequenceNumberStream<C> {
     fn drop(&mut self) {
         info!("Inbox stream is shutting down");
 
