@@ -9,7 +9,7 @@ edition = "2021"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.8.24"
 derive-getters = "0.2.0"
-async-imap = "0.5.0"
+async-imap = "0.6.0"
 mailparse = "0.13.8"
 tokio = { version = "1.18", features = ["full"] }
 thiserror = "1.0"
@@ -21,8 +21,8 @@ async-trait = "0.1.53"
 # their types.
 # https://github.com/async-email/async-imap/pull/57
 futures = "0.3.15"
-async-native-tls = { version = "0.3.3" }
-async-std = { version = "1.8.0", default-features = false, features = ["std"] }
+async-native-tls = { version = "0.4" }
+async-std = { version = "1.8.0" }
 stop-token = "0.7"
 
 [dev-dependencies]
