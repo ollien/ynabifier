@@ -21,8 +21,8 @@ pub struct Multi {
 }
 
 impl Multi {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(cancels: Vec<Box<dyn Cancel + Send>>) -> Self {
+        Self { cancels }
     }
 
     /// Insert a new [`Cancel`] into the Multi
@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_multi_cancels_all() {
-        let mut multi = Multi::new();
+        let mut multi = Multi::default();
 
         // Though there isn't more than one thread, we use a Mutex for interior mutability so we can satisfy Send.
         // (RefCell is Send, but Arc is not unless the interior is both Send and Sync)
