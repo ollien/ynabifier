@@ -29,8 +29,7 @@ mod testutil;
 
 type IMAPTransportStream = TlsStream<TcpStream>;
 type IMAPClient = async_imap::Client<IMAPTransportStream>;
-// TODO: Probably doesn't need to be pub?
-pub type IMAPSession = async_imap::Session<IMAPTransportStream>;
+type IMAPSession = async_imap::Session<IMAPTransportStream>;
 
 #[derive(Error, Debug)]
 pub enum StreamSetupError {
