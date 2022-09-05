@@ -5,7 +5,7 @@ use futures::Future;
 use thiserror::Error;
 
 mod cancel;
-pub mod multi;
+pub(crate) mod multi;
 
 /// `SpawnError` describes why a spawn may have failed to occur.
 #[derive(Error, Debug)]
