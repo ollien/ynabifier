@@ -12,7 +12,7 @@ use std::{
 use thiserror::Error;
 
 use crate::{
-    task::{CancelOnDrop, MultiCancel, Spawn, SpawnError, multi::{self, Runner}},
+    task::{CancelOnDrop, MultiCancel, Spawn, SpawnError, multi::{self, Runner, Task}},
     CHANNEL_SIZE,
 };
 
@@ -151,8 +151,8 @@ async fn stream_incoming_messages_to_sink<N, F, O>(
     while let Some(sequence_number) = sequence_number_stream.next().await {
         let fetcher_arc_clone = fetcher_arc.clone();
         let output_sink_clone = output_sink.clone();
-        debug!("submitting task for {}", sequence_number);
-        let spawn_res = runner.submit_new_task(Box::new(async move {
+
+        let fetch_future = async move {
             let fetcher = fetcher_arc_clone;
             let mut output_sink_clone = output_sink_clone;
 
@@ -162,7 +162,11 @@ async fn stream_incoming_messages_to_sink<N, F, O>(
                 Err(StreamError::FetchFailed(err)) => error!("failed to fetch message: {:?}", err),
                 Err(StreamError::SinkFailed(err)) => error!("failed to send fetched message to output sink: {:?}", err)
             }
-        })).await;
+        };
+
+        let fetch_task = Task::new(format!("Fetch sequence number {}", sequence_number), Box::new(fetch_future));
+        debug!("submitting task for sequence number {}", sequence_number);
+        let spawn_res = runner.submit_new_task(fetch_task).await;
 
         if let Err(spawn_err) = spawn_res {
             error!("failed to spawn task to fetch sequence number {sequence_number}: {spawn_err:?}");

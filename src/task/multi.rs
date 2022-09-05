@@ -5,7 +5,12 @@ use std::{fmt::Debug, sync::Arc};
 use thiserror::Error;
 use super::{Spawn, SpawnError, Cancel};
 use futures::{channel::{mpsc::{self, UnboundedSender, UnboundedReceiver}, oneshot}, Future, StreamExt, SinkExt};
-pub type Task = Box<dyn Future<Output = ()> + Send>;
+
+/// `Task` represents a single unit that can be submitted to `listen_for_tasks` for running under a `Runner`.
+pub struct Task {
+    name: String,
+    future: Box<dyn Future<Output = ()> + Send>,
+}
 
 #[derive(Error, Debug)]
 pub enum TaskError {
@@ -21,6 +26,12 @@ pub struct Runner {
 pub struct CancelHandle {
     task_sender: UnboundedSender<Task>,
     cancel_signal_sender: oneshot::Sender<()>
+}
+
+impl Task {
+    pub fn new(name: String, future: Box<dyn Future<Output = ()> + Send>) -> Self {
+        Self { name, future }
+    }
 }
 
 /// Spawn a background task to listen for new tasks and run them to completion. The given `Runner` can be cancelled
@@ -87,20 +98,25 @@ async fn run_tasks_on_recv<S> (
     S::Cancel: 'static,
 {
     while let Some(task) = task_stream.next().await {
-        let spawn_res = spawner.spawn(Box::into_pin(task));
+        debug!("Spawning task '{}'...", task.name);
+
+        let spawn_res = spawner.spawn(Box::into_pin(task.future));
         match spawn_res {
             Ok(cancel) => {
                 let send_cancel_res = cancel_sink.send(Box::new(cancel)).await;
                 if let Err(err) = send_cancel_res {
                     warn!(
                         concat!(
-                        "a task successfully spawned, but its Cancel could not be stored. ",
-                        "This may lead to a leak! : {:?}"
-                    ), err);
+                            "Task '{}' successfully spawned, but its Cancel could not be stored. ",
+                            "This may lead to a leak! : {:?}"
+                        ),
+                        task.name,
+                        err
+                    );
                 }
             }
-            // TODO: Maybe we could embed some metadata so we know what task failed to run
-            Err(err) => error!("failed to spawn task: {}", err)
+
+            Err(err) => error!("failed to spawn task '{}': {}", task.name, err)
         }
     }
 }
@@ -151,9 +167,18 @@ mod tests {
             .expect("failed to begin listening for tasks");
 
         // Each task will send a message once they've been called
-        let tasks = txs_from_task.into_iter().map(|tx| async { tx.send(()).expect("failed to send result"); });
+        let tasks = txs_from_task
+            .into_iter()
+            .enumerate()
+            .map(|(i, tx)| {
+                Task::new(
+                    format!("Task {}", i),
+                    Box::new(async { tx.send(()).expect("failed to send result"); })
+                )
+            });
+
         for task in tasks {
-            let submit_res = runner.submit_new_task(Box::new(task)).await;
+            let submit_res = runner.submit_new_task(task).await;
             assert!(submit_res.is_ok());
         }
 
@@ -204,18 +229,22 @@ mod tests {
         let tasks = rxs_from_task
             .into_iter()
             .zip(drop_handles.into_iter())
-            .map(|(rx_from_task, drop_handle)| {
-            async move {
-                // We wait for this to drop so we can wait on this asynchronous cancellation
-                #[allow(clippy::no_effect_underscore_binding)]
-                let _drop_handle = drop_handle;
-                rx_from_task.await.expect("recv failed");
-                panic!("this should never be reached");
-            }
+            .enumerate()
+            .map(|(i, (rx_from_task, drop_handle))| {
+                Task::new(
+                    format!("Task {}", i),
+                    Box::new(async move {
+                        // We wait for this to drop so we can wait on this asynchronous cancellation
+                        #[allow(clippy::no_effect_underscore_binding)]
+                        let _drop_handle = drop_handle;
+                        rx_from_task.await.expect("recv failed");
+                        panic!("this should never be reached");
+                    })
+                )
         });
 
         for task in tasks {
-            let res = runner.submit_new_task(Box::new(task)).await;
+            let res = runner.submit_new_task(task).await;
             assert!(res.is_ok());
         }
 
@@ -238,14 +267,15 @@ mod tests {
         let (mut runner, _cancel_handle) = listen_for_tasks(Arc::new(TokioSpawner))
             .expect("failed to begin listening for tasks");
 
-        let task = async {
+        let fut = async {
             let value = seed_rx.await
                 .expect("failed to receive value in task");
             response_tx.send(value)
                 .expect("failed to echo value from task");
         };
 
-        runner.submit_new_task(Box::new(task)).await
+        let task = Task::new("task".to_string(), Box::new(fut));
+        runner.submit_new_task(task).await
             .expect("failed to submit task");
 
         drop(runner);
@@ -263,7 +293,8 @@ mod tests {
             .expect("failed to begin listening for tasks");
 
         cancel_handle.cancel();
-        runner.submit_new_task(Box::new(async {}))
+        let task = Task::new("nil task".to_string(), Box::new(async {}));
+        runner.submit_new_task(task)
             .await
             .expect_err("should not have been able to submit a task");
     }
