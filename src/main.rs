@@ -10,7 +10,7 @@ use ynabifier::{
 };
 
 fn main() {
-    let _ = SimpleLogger::init(LevelFilter::Debug, LogConfig::default()).expect("setup failed");
+    SimpleLogger::init(LevelFilter::Debug, LogConfig::default()).expect("setup failed");
     let config_file = File::open("config.yml").expect("failed to open config file");
     let config =
         serde_yaml::from_reader::<_, Config>(config_file).expect("failed to parse config file");
