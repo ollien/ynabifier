@@ -1,4 +1,5 @@
 //! Provides items that may be useful for testing
+#![cfg(test)]
 
 use futures::Future;
 
