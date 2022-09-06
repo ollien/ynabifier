@@ -2,6 +2,7 @@ use futures::{
     channel::mpsc::{self, Receiver},
     Sink, SinkExt, Stream, StreamExt,
 };
+use mailparse::{MailParseError, ParsedMail};
 use std::{
     error::Error,
     fmt::{Debug, Display, Formatter},
@@ -27,6 +28,24 @@ pub mod message;
 #[cfg_attr(test, derive(Hash))]
 pub struct SequenceNumber(u32);
 
+/// Represents a single message fetched from the mail server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Message {
+    raw: Vec<u8>,
+}
+
+impl Message {
+    /// Get the raw bytes of this message
+    pub fn raw(&self) -> &[u8] {
+        self.raw.as_ref()
+    }
+
+    /// Parse this message as an email.
+    pub fn parsed(&self) -> Result<ParsedMail<'_>, MailParseError> {
+        mailparse::parse_mail(self.raw.as_ref())
+    }
+}
+
 /// `MessageFetcher` will fetch the contents of an email. Implementations should not really perform post-processing on
 /// the emails, so as to prevent blocking other async tasks.
 #[async_trait]
@@ -35,7 +54,7 @@ pub trait MessageFetcher {
 
     /// Fetch an individual email based on its sequence number. Unfortunately, because the format cannot be guaranteed
     ///  to be UTF-8, each message returned must return an owned copy of the raw bytes for further post-processing.
-    async fn fetch_message(&self, sequence_number: SequenceNumber) -> Result<Vec<u8>, Self::Error>;
+    async fn fetch_message(&self, sequence_number: SequenceNumber) -> Result<Message, Self::Error>;
 }
 
 /// `StreamSetupError` will be returned if there was an error in setting up the message stream.
@@ -48,7 +67,7 @@ pub enum StreamSetupError {
 
 /// `MessageStream` is a stream of any messages returned from `stream_incoming_messages`.
 pub struct MessageStream {
-    output_stream: Receiver<Vec<u8>>,
+    output_stream: Receiver<Message>,
     _cancel_guard: CancelOnDrop<MultiCancel>,
 }
 
@@ -70,7 +89,7 @@ impl Display for SequenceNumber {
 }
 
 impl Stream for MessageStream {
-    type Item = Vec<u8>;
+    type Item = Message;
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         let output_stream = &mut self.get_mut().output_stream;
 
@@ -144,7 +163,7 @@ async fn stream_incoming_messages_to_sink<N, F, O>(
     N: Stream<Item = SequenceNumber> + Unpin,
     F: MessageFetcher + Send + Sync + 'static,
     F::Error: Send + Sync,
-    O: Sink<Vec<u8>> + Send + Unpin + Clone + 'static,
+    O: Sink<Message> + Send + Unpin + Clone + 'static,
     O::Error: Debug,
 {
     let fetcher_arc = Arc::new(fetcher);
@@ -180,10 +199,10 @@ async fn fetch_and_sink_message<F, O> (
     fetcher: &F,
     output_sink: &mut O,
     sequence_number: SequenceNumber
-) -> Result<(), StreamError<F, O, Vec<u8>>>
+) -> Result<(), StreamError<F, O, Message>>
 where
     F: MessageFetcher,
-    O: Sink<Vec<u8>> + Send + Unpin + Clone + 'static,
+    O: Sink<Message> + Send + Unpin + Clone + 'static,
     O::Error: Debug,
 {
     let msg = fetcher
@@ -226,7 +245,7 @@ mod tests {
 
     #[derive(Debug, Default)]
     struct MockMessageFetcher {
-        messages: HashMap<SequenceNumber, Vec<u8>>,
+        messages: HashMap<SequenceNumber, Message>,
     }
 
     impl MockMessageFetcher {
@@ -235,7 +254,9 @@ mod tests {
         }
 
         pub fn stage_message(&mut self, seq: SequenceNumber, message: &str) {
-            self.messages.insert(seq, message.bytes().collect());
+            self.messages.insert(
+                seq, Message{raw: message.bytes().collect()},
+            );
         }
     }
 
@@ -246,7 +267,7 @@ mod tests {
         async fn fetch_message(
             &self,
             sequence_number: SequenceNumber,
-        ) -> Result<Vec<u8>, Self::Error> {
+        ) -> Result<Message, Self::Error> {
             self.messages.get(&sequence_number).cloned().ok_or_else(|| {
                 StringError(format!("sequence number {:?} not found", sequence_number))
             })
@@ -268,7 +289,7 @@ mod tests {
         select! {
             msg = broker_handle.next().fuse() => assert_eq!(
                 "hello, world!".bytes().collect::<Vec<u8>>(),
-                msg.expect("empty channel"),
+                msg.expect("empty channel").raw(),
             ),
             _ = Delay::new(Duration::from_secs(5)).fuse() => panic!("test timed out"),
         };

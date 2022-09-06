@@ -1,10 +1,11 @@
-use crate::{IMAPSession, SessionGenerator};
+use crate::{IMAPSession, SessionGenerator, Message};
 use std::sync::Arc;
 
 use super::{MessageFetcher, SequenceNumber};
 use async_imap::{error::Error as IMAPError, types::Fetch};
 use async_trait::async_trait;
 use futures::StreamExt;
+use mailparse::{MailParseError, ParsedMail};
 use thiserror::Error;
 
 /// Indicates an error that occured during the fetch process
@@ -41,7 +42,7 @@ where
 {
     type Error = FetchError;
 
-    async fn fetch_message(&self, sequence_number: SequenceNumber) -> Result<Vec<u8>, Self::Error> {
+    async fn fetch_message(&self, sequence_number: SequenceNumber) -> Result<Message, Self::Error> {
         let session_gen = self.session_generator.as_ref();
         let mut session = generate_fetchable_session(session_gen)
             .await
@@ -53,7 +54,9 @@ where
         // TODO: this could use RAII (has the same problem as `inbox` does)
         session.logout().await.map_err(FetchError::TeardownFailed)?;
 
-        Ok(body.to_vec())
+        Ok(
+            Message{raw: body.to_vec()},
+        )
     }
 }
 

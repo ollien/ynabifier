@@ -25,7 +25,7 @@ fn main() {
                     .expect("failed to setup stream");
             if let Some(msg) = stream.next().await {
                 // This is perhaps not a sound assumption, but is fine for testing
-                dbg!(String::from_utf8(msg));
+                dbg!(std::str::from_utf8(msg.raw()));
             }
             drop(stream);
         }

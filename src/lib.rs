@@ -11,6 +11,7 @@ use thiserror::Error;
 
 pub use config::{Config, IMAP as IMAPConfig};
 pub use email::inbox::WatchError;
+pub use email::Message;
 
 use email::{
     login::{ConfigSessionGenerator, SessionGenerator},
@@ -58,7 +59,7 @@ impl From<email::StreamSetupError> for StreamSetupError {
 pub async fn stream_new_messages<S>(
     spawner: Arc<S>,
     imap_config: IMAPConfig,
-) -> Result<impl Stream<Item = Vec<u8>> + Send, StreamSetupError>
+) -> Result<impl Stream<Item = Message> + Send, StreamSetupError>
 where
     S: Spawn + Send + Sync + Unpin + 'static,
     S::Cancel: Unpin + 'static,
