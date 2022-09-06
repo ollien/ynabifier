@@ -27,7 +27,7 @@ impl SessionGenerator for ConfigSessionGenerator {
     }
 }
 
-impl<'a> ConfigSessionGenerator {
+impl ConfigSessionGenerator {
     pub fn new(config: IMAPConfig) -> Self {
         Self { config }
     }
