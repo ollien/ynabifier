@@ -35,6 +35,10 @@ pub struct Message {
 }
 
 impl Message {
+    pub fn new(raw: Vec<u8>) -> Self {
+        Self { raw }
+    }
+
     /// Get the raw bytes of this message
     pub fn raw(&self) -> &[u8] {
         self.raw.as_ref()

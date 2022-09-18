@@ -1,0 +1,831 @@
+Delivered-To: me@cardholder.com
+Received: by 2002:a59:c04d:0:b0:2de:4d02:b586 with SMTP id d13csp4830283vqp;
+        Tue, 13 Sep 2022 15:21:54 -0700 (PDT)
+X-Google-Smtp-Source: AA6agR6jEjc9qbM4L0hYWK3BgZ2pe3veLD7DfjkGZs8W4rupSzPLjTuPvBQAHzThP3r01mvri1RT
+X-Received: by 2002:a17:907:31c1:b0:742:28a3:5d08 with SMTP id xf1-20020a17090731c100b0074228a35d08mr23116063ejb.112.1663107714138;
+        Tue, 13 Sep 2022 15:21:54 -0700 (PDT)
+ARC-Seal: i=1; a=rsa-sha256; t=1663107714; cv=none;
+        d=google.com; s=arc-20160816;
+        b=WCM4TeIZU5vIeBaFaSCoQltBNWfJZdNdZLRH/zMyskv8D4xR8q8yqrOFVfvFHG5p0F
+         unk+VtgceEju4N7qjQVnqDXHZtG+iQ4M0moTzp9ihgsEpmaRzzkFOVhU4DvBucJ83Aln
+         bYLSMzAN4qdAnLkybIU4dvYWzLa+Tclochpwpep81nDNyCYd875Z2yagPqlSd2jBJrCT
+         Msyke5THXwTp3hLc3aUxBdySAc9aAhoXficBvRfl/M6+SarA5RHrdUJIV12q7yFFZcql
+         G6QOKNXiLOdv5qFQUNBybcnOEGC/asZFKcb3Tm9FZsyl8gWdl+AiS7EStBAZBSf+MxvD
+         rKyA==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20160816;
+        h=subject:date:to:from:mime-version:list-unsubscribe:errors-to
+         :dkim-signature:message-id;
+        bh=oHEH67FpkKXo2UbMQBFHsqapCa7fWy0UfBgNWmbFqOU=;
+        b=r/BdpqHHOLuCm29tdv6eo76Wrm32VkraFzykOGst+ReyFbynVPhwcObBufembEQZZG
+         QYIxmD7MmJlDgiwt/fqenIj5Y+sy+VuJx/7SrC274g5kClRlEouM5Bq+lJNNHO370m/t
+         8PwJV/40z69rizNlhXm6S6CDruN1JxPH8/N9h1LNKigK8sEUTAQodb4J9eVbsDpC24p2
+         qe8DdHP21yyOEYzkZa/sxxxeZ4hTm5ONlKcLMbyDJ0cpfDZ2ik4A4/KPZj4fTitj3D9R
+         zX87QJaAYrPb0WfjUEynxSeBrYuNFcLrebnSpAah9jjvOco0fOb/Xj5PwRKrV5DaZT/i
+         Z5qg==
+ARC-Authentication-Results: i=1; mx.google.com;
+       dkim=pass header.i=@info6.citi.com header.s=0 header.b=qrC5KBBn;
+       spf=pass (google.com: domain of scammer@fakebank.com designates 63.239.204.147 as permitted sender) smtp.mailfrom=scammer@fakebank.com;
+       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=citi.com
+Return-Path: <scammer@fakebank.com>
+Received: from p1-204147.info6.citi.com (p1-204147.info6.citi.com. [63.239.204.147])
+        by mx.google.com with ESMTPS id dn3-20020a17090794c300b0077be1301563si5692673ejc.196.2022.09.13.15.21.53
+        for <me@cardholder.com>
+        (version=TLS1_3 cipher=TLS_AES_256_GCM_SHA384 bits=256/256);
+        Tue, 13 Sep 2022 15:21:54 -0700 (PDT)
+Received-SPF: pass (google.com: domain of scammer@fakebank.com designates 63.239.204.147 as permitted sender) client-ip=63.239.204.147;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@info6.citi.com header.s=0 header.b=qrC5KBBn;
+       spf=pass (google.com: domain of scammer@fakebank.com designates 63.239.204.147 as permitted sender) smtp.mailfrom=scammer@fakebank.com;
+       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=citi.com
+Message-ID: <63210282.170a0220.3aa58.f2a9SMTPIN_ADDED_BROKEN@mx.google.com>
+X-Google-Original-Message-ID: <617.aet:8b399a5f-6f58-4dbe-ba97-560368d83ca0.202209132221519529824.0003043630@info6.citi.com>
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; s=0; d=info6.citi.com;
+ h=Message-ID:List-Unsubscribe:MIME-Version:From:To:Date:Subject:Content-Type;
+ i=scammer@fakebank.com;
+ bh=oHEH67FpkKXo2UbMQBFHsqapCa7fWy0UfBgNWmbFqOU=;
+ b=qrC5KBBn/xY6T5jfbePrbW9D5vRY5qDOJSfDbOV9FpVrK5IZXz3Fp53G2Ira0XHV34RExG8qawZW
+   NPysUydzcQSn888LTZJo0Nn83pBuF1dXpVgBQh3Z+KR+tI7gv92adLsJ7Z2fgZp3Tym9zW2ogBJF
+   9cTXSljBNgmot4Jh0KU=
+Received: from NY5PAET01 (10.24.71.38) by p1-204147.info6.citi.com id h441802o8is4 for <me@cardholder.com>; Tue, 13 Sep 2022 18:21:52 -0400 (envelope-from <scammer@fakebank.com>)
+Errors-to: scammer@fakebank.com
+Return-Path: scammer@fakebank.com<rp-f-C1l2zcsd1q-JoTBtm3Yuly-63lJyNgJ25T-Kj5vwNkx2TA@info6.citi.com>
+List-Unsubscribe: <mailto:unsub-f-C1l2zcsd1q-JoTBtm3Yuly-63lJyNgJ25T-Kj5vwNkx2TA@info6.citi.com?subject=Unsubscribe>
+X-Mailer: XyzMailer
+X-Xyz-cr: 617
+X-Xyz-cn: 819
+X-Xyz-bcn: 818
+X-Xyz-md: 100
+X-Xyz-mg: aet:8b399a5f-6f58-4dbe-ba97-560368d83ca0
+X-Xyz-et: 114
+X-Xyz-pk: 8b399a5f-6f58-4dbe-ba97-560368d83ca0
+X-Xyz-ct: 1352
+X-Xyz-bct: 1351
+X-Xyz-type: aet
+X-Xyz-inst: true
+MIME-Version: 1.0
+From: "Citi Alerts" <scammer@fakebank.com>
+To: "SOMEONE  " <me@cardholder.com>
+Date: 13 Sep 2022 22:21:51 +0000
+Subject: =?utf-8?B?QSAkMy4yOCB0cmFuc2FjdGlvbiB3YXMgbWFkZSBvbiB5b3VyIENpdGnCriBEb3VibGUgQ2FzaCBhY2NvdW50?=
+Content-Type: multipart/alternative;
+ boundary=--boundary_3077047_8261d5ea-f276-4ebc-a732-d4540f2a39c8
+
+
+----boundary_3077047_8261d5ea-f276-4ebc-a732-d4540f2a39c8
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+Citi(R) =0A=0AAdd scammer@fakebank.com to your address book to e=
+nsure delivery.=0A=0A=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=
+=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=
+=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=
+=3D=3D=3D=3D=0ASOMEONE  =0A=0APlease visit the following link to=
+ view your message:=0Ahttp://fm.info6.citi.com/ats/msg.aspx?sg1=3D=
+8b7a87b9657567cae4df4067fec14be6d52cf918107704a5b3d790cb93a9639a=0A=
+=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=
+=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=
+=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=3D=0A=0A=
+Privacy=0Ahttps://l.info6.citi.com/rts/go2.aspx?t=3D133&tp=3Dk-F7=
+hweSyfxHq-2ztnSrbT0PH-1DZkJcXHic0-AlOVWtE3JWp-1uJ1ezJM1nI-A7nnrDu=
+bnYX-FrDE2rA9H5E-LQl9Bxxky1u-I9Egz10Ooh1-6sNABv0GUnZ=0A=0ASecurit=
+y=0Ahttps://l.info6.citi.com/rts/go2.aspx?t=3D134&tp=3Dk-F7hweSyf=
+xHq-2ztnSrbT0PH-1DZkJcXHic0-AlOVWtE3JWp-1uJ1ezJM1nI-A7nnrDubnYX-F=
+rDE2rA9H5E-LQl9Bxxky1u-I9Egz10Ooh1-6sNABv0GUnZ=0A=0AThis email is=
+ to keep you informed about your Citibank credit card, including =
+service updates and other information about your account. Have qu=
+estions? Please do not reply to this service email. Instead, just=
+ Contact Us=0Ahttps://l.info6.citi.com/rts/go2.aspx?t=3D135&tp=3D=
+k-F7hweSyfxHq-2ztnSrbT0PH-1DZkJcXHic0-AlOVWtE3JWp-1uJ1ezJM1nI-A7n=
+nrDubnYX-FrDE2rA9H5E-LQl9Bxxky1u-I9Egz10Ooh1-6sNABv0GUnZ=0A=0ACit=
+ibank Customer Service P. O. Box 6500 Sioux Falls, SD 57117=0A=0A=
+=C2=A92022 Citibank, N.A. =0A
+----boundary_3077047_8261d5ea-f276-4ebc-a732-d4540f2a39c8
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "h=
+ttp://www.w3.org/TR/html4/loose.dtd"><html lang=3D"en-US"><head><=
+title>A $3.28 transaction was made on your Citi=C2=AE Double Cash=
+ account</title><!-- OpenText Exstream Version 16.4.6 64-bit--><!=
+-- CreationDate: 9/13/2022 17:21:46 --><!-- For: Registered to CI=
+TIAIX  --><style type=3D"text/css">/* MP - Overhaul top.css */.Mo=
+bileWidth {width: 420px;}/*Logo + security zone*/.ValignBottom td=
+ {  vertical-align: bottom;}.SecurityZoneTop > tbody > tr > td:nt=
+h-child(2) {  width: 51px; vertical-align: middle;}.SecurityZoneT=
+op > tbody > tr > td:empty {    width: 0;    display: none;}.Head=
+line {  border-radius: 5px 5px 0 0;}.StatementSnap > tbody > tr >=
+ td > table > tbody > tr:last-child > td {  border-bottom: 0!impo=
+rtant;}.CTAButton a,.Education a,.BinaryCTA a {  display: table-c=
+ell;  vertical-align: middle;  width: 170px;}.SecondaryCTA > tbod=
+y > tr > td > table > tbody > tr:nth-child(3) > td > table > tbod=
+y > tr > td,.SecondaryCTA > tbody > tr > td > table > tbody > tr:=
+nth-child(4) > td > table > tbody > tr > td {  line-height: norma=
+l!important;}.SecondaryCTA img {  vertical-align: top;}.Signoff {=
+  border-radius: 0 0 5px 5px;}sup, sub {  vertical-align: baselin=
+e;  position: relative;  top: -0.4em;}sub {   top: 0.4em; }/*Link=
+s*/.SamBlueHack a,.SamBlueHack a span {  color:#005AA1 !important=
+;}.SamGrayHack a,.SamGrayHack a span {  color: #666666 !important=
+;}.SamWhiteHack a,.SamWhiteHack a span {  color: #FFFFFF !importa=
+nt;}.SMSButton a,.SMSButton a span {    border: none;    padding:=
+ 4.75px;    text-align: center;    text-decoration: none !importa=
+nt;    display: inline-block;    cursor: pointer;    color: #FFFF=
+FF !important;}@media (max-width: 480px) {  .MobileWidth {width: =
+320px;}  td[class=3D"ShowMobile"] {    overflow: visible !importa=
+nt;    float: none !important;    display: table-cell !important;=
+    line-height:100% !important;  }  td[class=3D"ShowMobilePLT"] =
+{    overflow: visible !important;    float: none !important;    =
+display: table-cell !important;    line-height:100% !important;  =
+}  td[class=3D"HideDesktopPLT"] {    overflow: visible !important=
+;    float: none !important;    display: none !important;    line=
+-height:100% !important;  }  /*Logo header*/  .LogoHeader > tbody=
+ > tr > td:first-child > table > tbody > tr > td {    padding-bot=
+tom: 10px !important;  }  .LogoHeader > tbody > tr > td:last-chil=
+d > table > tbody > tr > td {    padding-top: 0 !important;  }   =
+/*Statment snapshot*/  .StatementSnap > tbody > tr > td > table >=
+ tbody > tr > td {    display: block;    width: 100% !important; =
+ }  .StatementSnap > tbody > tr > td > table > tbody > tr:nth-chi=
+ld(3) > td:first-child {    border-bottom: 0!important;  }  .Stat=
+ementSnap > tbody > tr > td > table > tbody > tr:nth-child(n+3) >=
+ td:last-child {    padding-top: 0!important;    height: auto!imp=
+ortant;    border-top: 0!important;  }  .StatementSnap > tbody > =
+tr > td > table > tbody > tr:nth-child(n+3) > td:first-child {   =
+ padding-bottom: 0!important;    height: auto!important;    borde=
+r-bottom: 0!important;  }  /*List of steps*/  .ListOfSteps td:nth=
+-child(2) {    padding-left: 20px;  }  /*Action summary v3*/  .Ac=
+tionSum3 img {    width: 10px !important;    margin-bottom: 44px;=
+  }  /*CTA*/  .CTAButton > tbody > tr:first-child > td {    paddi=
+ng: 15px 0 0 0 !important;  }  .CTAButton > tbody > tr:first-chil=
+d > td > table > tbody > tr > td {    padding-right: 30px!importa=
+nt;  }  /*Account links*/  .AccountLinks > tbody > tr > td > tabl=
+e {    width: 100%!important;  }  .AccountLinks table table td { =
+   text-align: left !important;  }  .AccountLinks > tbody > tr > =
+td > table > tbody > tr > td {    border-left: 0 !important;    b=
+order-right: 0 !important;  }  .AccountLinks > tbody > tr > td { =
+   border-bottom: #D7D7D7 1px solid;  }  .AccountLinks > tbody > =
+tr > td:last-child {    border-bottom: 0 !important;  }  .Account=
+Links img {    width: 8px!important;    height: 15px!important;  =
+}  .AccountLinks > tbody > tr > td > table > tbody > tr > td:nth-=
+child(2) {    width: 8px!important;  }  .AccountLinks > tbody > t=
+r > td:nth-child(2) {    padding-top: 15px !important;  }  .Accou=
+ntLinks > tbody > tr > td:nth-child(3) {    padding-top: 15px !im=
+portant;  }  .AppStore > tbody > tr > td:nth-child(2) {    height=
+: 7px;  }    .RewardCertificate td > div {    max-width: 260px;  =
+  overflow: visible;  }  .RewardCertificate div > img {    max-wi=
+dth: 369px!important;    min-width: 369px!important;    width: 36=
+9px;    margin-left: -54px;  }    .CTAButton a,  .Education a {  =
+  width: 260px;  }  .BinaryCTA a {    width: 120px;  }}</style><m=
+eta http-equiv=3D"Content-Type" content=3D"text/html; charset=3Du=
+tf-8"/><style>@media (max-width: 480px){table {width:100%;}img {m=
+ax-width:100%; height: auto !important;}table.EX_RESPONSIVE_TABLE=
+_480 {display:block;}table.EX_RESPONSIVE_TABLE_480 > tbody {displ=
+ay:block;}table.EX_RESPONSIVE_TABLE_480 > tbody > tr {display:blo=
+ck;}table.EX_RESPONSIVE_TABLE_480 > tbody > tr > th {display:bloc=
+k;}table.EX_RESPONSIVE_TABLE_480 > tbody > tr > td {display:block=
+;}table.EX_RESPONSIVE_TABLE_480 table {table-layout: auto !import=
+ant;}.EX_RESPONSIVE_HIDE_CELL_480 {display:none !important;}}</st=
+yle></head><body><table width=3D"100%" cellpadding=3D"0" cellspac=
+ing=3D"0"><tr><td align=3D"center"></table><table cellpadding=3D"=
+0" cellspacing=3D"0" width=3D"651" class=3D"MainTable EX_RESPONSI=
+VE_TABLE_480" data-experian-nop=3D"EXPERIAN_NOP^ EX_RESPONSIVE_TA=
+BLE_480" role=3D"presentation" bgcolor=3D"#EEEEEE"  style=3D"bord=
+er-collapse: collapse; table-layout: fixed;  width: 100%;"><tr><t=
+d class=3D"EX_RESPONSIVE_HIDE_CELL_480" width=3D"651" height=3D"0=
+"></td></tr><tr><td valign=3D"middle" align=3D"center"><table cel=
+lpadding=3D"0" cellspacing=3D"0" width=3D"651" role=3D"presentati=
+on" bgcolor=3D"#EEEEEE"  class=3D"EX_RESPONSIVE_TABLE_480" style=3D=
+"border-collapse: collapse; table-layout: fixed;"><tr><td class=3D=
+"EX_RESPONSIVE_HIDE_CELL_480" width=3D"651" height=3D"0"></td></t=
+r><tr><td valign=3D"middle" align=3D"center"><table cellpadding=3D=
+"0" cellspacing=3D"0" width=3D"651" class=3D"MainTable" role=3D"p=
+resentation" bgcolor=3D"#EEEEEE"  style=3D"border-collapse: colla=
+pse; table-layout: fixed;  width: 100%;"><tr><td class=3D"EX_RESP=
+ONSIVE_HIDE_CELL_480" width=3D"651" height=3D"0"></td></tr><tr><t=
+d bgcolor=3D"#FFFFFF" valign=3D"middle" align=3D"center"><table i=
+d=3D"ex-textbox67" cellpadding=3D"0" cellspacing=3D"0" width=3D"6=
+50" class=3D"FullWidth"  style=3D"line-height: normal; border-col=
+lapse: separate;  width: 100%;"><tr><td width=3D"648" valign=3D"t=
+op" align=3D"left"><table cellpadding=3D"0" cellspacing=3D"0" wid=
+th=3D"100%"  style=3D"border-collapse: collapse;"><tr><td  style=3D=
+"margin-top: 0; margin-bottom: 0; font-size: 0;"><span  class=3D"=
+FullWidth"  style=3D"font-family: 'Arial', serif; font-size: 12px=
+; line-height: 14px; color:#666666;  width: 100%;">View the trans=
+action details.</span></td></tr></table></td></tr></table></td></=
+tr><tr><td valign=3D"middle" align=3D"center"><table cellpadding=3D=
+"0" cellspacing=3D"0" width=3D"650" class=3D"CategoryBar EX_RESPO=
+NSIVE_TABLE_480" role=3D"presentation"  style=3D"border-collapse:=
+ collapse; table-layout: fixed;"><tr><td class=3D"EX_RESPONSIVE_H=
+IDE_CELL_480" width=3D"650" height=3D"0"></td></tr><tr><td valign=
+=3D"middle" align=3D"center"><table id=3D"ex-textbox68" cellpaddi=
+ng=3D"0" cellspacing=3D"0" width=3D"650" class=3D"CategoryBar"  b=
+gcolor=3D"#002A54" style=3D"line-height: normal; border-collapse:=
+ separate; padding-bottom: 20px; padding-top: 20px;"><tr><td widt=
+h=3D"648" height=3D"20" valign=3D"middle" align=3D"center"><table=
+ cellpadding=3D"0" cellspacing=3D"0" width=3D"100%"  style=3D"bor=
+der-collapse: collapse;"><tr><td class=3D"Category-BarText"  styl=
+e=3D"margin-top: 0; margin-bottom: 0; font-size: 0; text-align: c=
+enter; line-height: 20px;"><img width=3D"20" height=3D"20" src=3D=
+"https://snamwpm.eccmp.com/wpm/617/ContentUploads/CRB-Category_Ba=
+rs/Apr20_Citi_RGB_CategoryIcon_CustomAlert.png" alt=3D"" style=3D=
+" vertical-align: middle;"/><span  class=3D"CategoryBar TS-Catego=
+ryBar-Text"  style=3D"font-family: 'Arial', serif; font-size: 18p=
+x; color:#FFFFFF;  vertical-align: middle;">=C2=A0CUSTOM ALERT</s=
+pan></td></tr></table></td></tr></table></td></tr></table></td></=
+tr><tr><td bgcolor=3D"#FFFFFF" valign=3D"middle" align=3D"center"=
+><table cellpadding=3D"0" cellspacing=3D"0" width=3D"417" class=3D=
+"ValignBottom LogoHeader MobileWidth EX_RESPONSIVE_TABLE_480 EX_R=
+ESPONSIVE_TABLE_480" role=3D"presentation"  style=3D"border-colla=
+pse: collapse; table-layout: fixed;"><tr><td class=3D"EX_RESPONSI=
+VE_HIDE_CELL_480" width=3D"200" height=3D"0"></td><td class=3D"EX=
+_RESPONSIVE_HIDE_CELL_480" width=3D"217" height=3D"0"></td></tr><=
+tr><td valign=3D"middle"><table width=3D"200" cellpadding=3D"0" c=
+ellspacing=3D"0"  style=3D"border-collapse: collapse;"><tr><td wi=
+dth=3D"200"  align=3D"left" style=3D"padding-bottom: 25px; paddin=
+g-top: 25px;"><table cellpadding=3D"0" cellspacing=3D"0"  style=3D=
+"border-collapse: collapse;"><tr><td width=3D"200" height=3D"19" =
+align=3D"left" valign=3D"top"><img id=3D"ex-image17" src=3D"https=
+://snamwpm.eccmp.com/wpm/617/ContentUploads/logos/Jan16_CI_SZ_log=
+o_citi.png" alt=3D"Citi" class=3D"LogoTop"  style=3D"display: blo=
+ck;"/></td></tr></table></td></tr></table></td><td valign=3D"bott=
+om"><table width=3D"217" cellpadding=3D"0" cellspacing=3D"0"  sty=
+le=3D"border-collapse: collapse;"><tr><td width=3D"217"  align=3D=
+"right" style=3D"padding-bottom: 25px; padding-top: 25px;"><table=
+ cellpadding=3D"0" cellspacing=3D"0" class=3D"SecurityZoneTop Loc=
+kIcon"  style=3D"border-collapse: collapse;"><tr><td align=3D"lef=
+t" valign=3D"top"><table id=3D"ex-textbox69" cellpadding=3D"0" ce=
+llspacing=3D"0" width=3D"164"  style=3D"line-height: normal; bord=
+er-collapse: separate;"><tr><td width=3D"162" valign=3D"top" alig=
+n=3D"right"><table cellpadding=3D"0" cellspacing=3D"0" width=3D"1=
+00%"  style=3D"border-collapse: collapse;"><tr><td class=3D"Secur=
+ity-Text"  style=3D"margin-top: 0; margin-bottom: 0; font-size: 0=
+; text-align: right; line-height: 12px;"><img src=3D"https://acco=
+untonline.citi.com/cards/svc/img/logo/CI_SZ_icn_lock.gif" alt=3D"=
+Lock Icon"/><span class=3D"TS-Security-Text"  style=3D"font-famil=
+y: 'Arial', serif; font-size: 9px; color:#666666;">=C2=A0Someone=
+ Cardholder</span></td></tr><tr><td class=3D"Security-Text"  styl=
+e=3D"margin-top: 0; margin-bottom: 0; font-size: 0; text-align: r=
+ight; line-height: 12px;"><span class=3D"TS-Security-Text"  style=
+=3D"font-family: 'Arial', serif; font-size: 9px; color:#666666;">=
+Cardmember since 2021</span></td></tr><tr><td class=3D"Security-T=
+ext"  style=3D"margin-top: 0; margin-bottom: 0; font-size: 0; tex=
+t-align: right; line-height: 12px;"><span class=3D"TS-Security-Te=
+xt"  style=3D"font-family: 'Arial', serif; font-size: 9px; color:=
+#666666;">Account ending in</span><span class=3D"TS-Security-Text=
+"  style=3D"font-family: 'Arial', serif; font-size: 9px; color:#6=
+66666;">=C2=A0 </span><span class=3D"TS-Security-Text"  style=3D"=
+font-family: 'Arial', serif; font-size: 9px; color:#666666;">1234=
+</span></td></tr></table></td></tr></table></td><td align=3D"left=
+" valign=3D"top"><table id=3D"ex-textbox70" cellpadding=3D"0" cel=
+lspacing=3D"0" width=3D"53"  style=3D"line-height: normal; border=
+-collapse: separate; padding-left: 5px;"><tr><td width=3D"46" val=
+ign=3D"top" align=3D"right"><img src=3D"https://snamwpm.eccmp.com=
+/wpm/617/ContentUploads/cardart/March22_CardArt_DoubleCash.jpg" a=
+lt=3D""/></td></tr></table></td></tr></table></td></tr></table></=
+td></tr></table></td></tr><tr><td bgcolor=3D"#FFFFFF" valign=3D"m=
+iddle" align=3D"center"><table cellpadding=3D"0" cellspacing=3D"0=
+" class=3D"MobileWidth"  style=3D"border-collapse: collapse;"><tr=
+><td align=3D"left" valign=3D"top"><table id=3D"ex-textbox71" cel=
+lpadding=3D"0" cellspacing=3D"0" width=3D"420" class=3D"Headline"=
+  bgcolor=3D"#CCCCCC" style=3D"line-height: normal; border-collap=
+se: separate; padding-left: 30px; padding-right: 30px; padding-bo=
+ttom: 30px; padding-top: 30px;"><tr><td width=3D"358" valign=3D"t=
+op" align=3D"left"><table cellpadding=3D"0" cellspacing=3D"0" wid=
+th=3D"100%"  style=3D"border-collapse: collapse;"><tr><td role=3D=
+'heading' aria-level=3D'1' class=3D"Headline-Title"  style=3D"mar=
+gin-top: 0; margin-bottom: 0; font-size: 0; line-height: 36px;"><=
+img width=3D"24" height=3D"24" src=3D"https://snamwpm.eccmp.com/w=
+pm/617/ContentUploads/Headline/Apr20_Citi_RGB_HeadlineIcon_Custom=
+Alert.png" alt=3D""/><span  class=3D"Headline TS-Headline-Title" =
+ style=3D"font-family: 'Arial', serif; font-size: 34px; color:#33=
+3333;">=C2=A0A transaction of $3.28 was made on your account</spa=
+n></td></tr><tr><td class=3D"Headline-Text"  style=3D"margin-top:=
+ 0; margin-bottom: 0; font-size: 0; padding-top: 30px; line-heigh=
+t: 20px;"><span  class=3D"Headline TS-Headline-Text"  style=3D"fo=
+nt-family: 'Arial', serif; font-size: 13px; color:#333333;">You'r=
+e receiving this email based on your custom alert settings.</span=
+></td></tr></table></td></tr></table></td></tr><tr><td align=3D"l=
+eft" valign=3D"top"><table id=3D"ex-textbox72" cellpadding=3D"0" =
+cellspacing=3D"0" width=3D"420"  bgcolor=3D"#008FC9" style=3D"lin=
+e-height: normal; border-collapse: separate;"><tr><td width=3D"41=
+8" height=3D"5" valign=3D"middle" align=3D"center"><table cellpad=
+ding=3D"0" cellspacing=3D"0" width=3D"100%"  style=3D"border-coll=
+apse: collapse;"><tr><td  style=3D"margin-top: 0; margin-bottom: =
+0; font-size: 0; text-align: center; line-height: 1;"></td></tr><=
+/table></td></tr></table></td></tr></table></td></tr><tr><td bgco=
+lor=3D"#FFFFFF" valign=3D"middle" align=3D"center"><table cellpad=
+ding=3D"0" cellspacing=3D"0" bgcolor=3D"#EEEEEE" class=3D"SamBlue=
+Hack MobileWidth Greeting"  style=3D"border-collapse: collapse;">=
+<tr><td align=3D"left" valign=3D"top"  style=3D"padding-left: 30p=
+x; padding-Right: 30px;"><table id=3D"ex-table33" cellpadding=3D"=
+0" cellspacing=3D"0" width=3D"360"  style=3D"border-collapse: col=
+lapse;"><tr><td width=3D"360" height=3D"15"  align=3D"left" valig=
+n=3D"top" style=3D"margin-bottom: 0px; margin-top: 0px;"></td></t=
+r><tr><td width=3D"360" bgcolor=3D"#EEEEEE"  align=3D"left" valig=
+n=3D"top" style=3D"margin-bottom: 0px; margin-top: 0px;"><table c=
+ellpadding=3D"0" cellspacing=3D"0" width=3D"100%"  style=3D"borde=
+r-collapse: collapse;"><tr><td class=3D"Body-Text"  style=3D"marg=
+in-top: 0; margin-bottom: 0; font-size: 0; line-height: 20px;"><s=
+pan class=3D"TS-Body-Text"  style=3D"font-family: 'Arial', serif;=
+ font-size: 13px; color:#333333;">Hi, </span><span class=3D"TS-Bo=
+dy-Text"  style=3D"font-family: 'Arial', serif; font-size: 13px; =
+color:#333333;">Someone</span><span class=3D"TS-Body-Text"  styl=
+e=3D"font-family: 'Arial', serif; font-size: 13px; color:#333333;=
+">. The transaction made on your </span><span class=3D"TS-Body-Te=
+xt"  style=3D"font-family: 'Arial', serif; font-size: 13px; color=
+:#333333;">Citi</span><span  style=3D"font-family: 'Arial', serif=
+; font-size: 13px; color:#333333;"><sup>=C2=AE</sup></span><span =
+class=3D"TS-Body-Text"  style=3D"font-family: 'Arial', serif; fon=
+t-size: 13px; color:#333333;">=C2=A0Double Cash</span><span class=
+=3D"TS-Body-Text"  style=3D"font-family: 'Arial', serif; font-siz=
+e: 13px; color:#333333;">=C2=A0account exceeded $0.00. The transa=
+ction details are listed below.</span></td></tr></table></td></tr=
+><tr><td width=3D"360" height=3D"15"  align=3D"left" valign=3D"to=
+p" style=3D"margin-bottom: 0px; margin-top: 0px;"></td></tr></tab=
+le></td></tr></table></td></tr><tr><td bgcolor=3D"#FFFFFF" valign=
+=3D"middle" align=3D"center"><table cellpadding=3D"0" cellspacing=
+=3D"0" bgcolor=3D"#EEEEEE" class=3D"SamBlueHack MobileWidth Actio=
+nSum2"  style=3D"border-collapse: collapse;"><tr><td align=3D"lef=
+t" valign=3D"top"  style=3D"padding-left: 30px; padding-Right: 30=
+px;"><table id=3D"ex-table34" cellpadding=3D"0" cellspacing=3D"0"=
+ width=3D"360"  style=3D"border-collapse: collapse;"><tr><td cols=
+pan=3D"2" width=3D"360" height=3D"5"  align=3D"left" valign=3D"to=
+p" style=3D"margin-bottom: 0px; margin-top: 0px;"></td></tr><tr><=
+td colspan=3D"2" width=3D"360"  align=3D"left" valign=3D"top" sty=
+le=3D"margin-bottom: 0px; margin-top: 0px; padding-top:10.00px; p=
+adding-bottom:15.00px;"><table cellpadding=3D"0" cellspacing=3D"0=
+" width=3D"100%"  style=3D"border-collapse: collapse;"><tr><td ro=
+le=3D'heading' aria-level=3D'2' class=3D"ActionSummaryV2-Title" r=
+ole=3D"heading" aria-level=3D"2"  style=3D"margin-top: 0; margin-=
+bottom: 0; font-size: 0; line-height: 29px;"><span class=3D"TS-Ac=
+tionSummaryV2-Title"  style=3D"font-family: 'Arial', serif; font-=
+size: 18px; color:#666666;">Amount: $3.28</span></td></tr></table=
+></td></tr><tr><td colspan=3D"2" width=3D"360" height=3D"1" bgcol=
+or=3D"#D7D7D7"  align=3D"left" valign=3D"top" style=3D"margin-bot=
+tom: 0px; margin-top: 0px;"></td></tr><tr><td colspan=3D"2" width=
+=3D"350" height=3D"-5"  align=3D"left" valign=3D"top" style=3D"ma=
+rgin-bottom: 0px; margin-top: 0px; padding-top:5.00px; padding-bo=
+ttom:5.00px; padding-left:5.00px; padding-right:5.00px;"></td></t=
+r><tr><td width=3D"165"  align=3D"left" valign=3D"top" style=3D"m=
+argin-bottom: 0px; margin-top: 0px; padding-top:10.00px; padding-=
+bottom:10.00px; padding-right:15.00px;"><table cellpadding=3D"0" =
+cellspacing=3D"0" width=3D"100%"  style=3D"border-collapse: colla=
+pse;"><tr><td class=3D"ActionSummaryV2-Label"  style=3D"margin-to=
+p: 0; margin-bottom: 0; font-size: 0; line-height: 19px;"><span c=
+lass=3D"TS-ActionSummaryV2-Label"  style=3D"font-family: 'Arial',=
+ serif; font-size: 13px; color:#666666;">Card Ending In</span></t=
+d></tr></table></td><td width=3D"180" bgcolor=3D"#EEEEEE"  align=3D=
+"left" valign=3D"top" style=3D"margin-bottom: 0px; margin-top: 0p=
+x; padding-top:10.00px; padding-bottom:10.00px;"><table cellpaddi=
+ng=3D"0" cellspacing=3D"0" width=3D"100%"  style=3D"border-collap=
+se: collapse;"><tr><td class=3D"ActionSummaryV2-Value"  style=3D"=
+margin-top: 0; margin-bottom: 0; font-size: 0; line-height: 19px;=
+"><span class=3D"TS-ActionSummaryV2-Value"  style=3D"font-family:=
+ 'Arial', serif; font-size: 13px; color:#333333;">1234</span></td=
+></tr></table></td></tr><tr><td width=3D"165"  align=3D"left" val=
+ign=3D"top" style=3D"margin-bottom: 0px; margin-top: 0px; padding=
+-top:10.00px; padding-bottom:10.00px; padding-right:15.00px;"><ta=
+ble cellpadding=3D"0" cellspacing=3D"0" width=3D"100%"  style=3D"=
+border-collapse: collapse;"><tr><td class=3D"ActionSummaryV2-Labe=
+l"  style=3D"margin-top: 0; margin-bottom: 0; font-size: 0; line-=
+height: 19px;"><span class=3D"TS-ActionSummaryV2-Label"  style=3D=
+"font-family: 'Arial', serif; font-size: 13px; color:#666666;">Me=
+rchant</span></td></tr></table></td><td width=3D"180" bgcolor=3D"=
+#EEEEEE"  align=3D"left" valign=3D"top" style=3D"margin-bottom: 0=
+px; margin-top: 0px; padding-top:10.00px; padding-bottom:10.00px;=
+"><table cellpadding=3D"0" cellspacing=3D"0" width=3D"100%"  styl=
+e=3D"border-collapse: collapse;"><tr><td class=3D"ActionSummaryV2=
+-Value"  style=3D"margin-top: 0; margin-bottom: 0; font-size: 0; =
+line-height: 19px;"><span class=3D"TS-ActionSummaryV2-Value"  sty=
+le=3D"font-family: 'Arial', serif; font-size: 13px; color:#333333=
+;">STOP &amp; SHOP                   </span></td></tr></table></t=
+d></tr><tr><td width=3D"165"  align=3D"left" valign=3D"top" style=
+=3D"margin-bottom: 0px; margin-top: 0px; padding-top:10.00px; pad=
+ding-bottom:10.00px; padding-right:15.00px;"><table cellpadding=3D=
+"0" cellspacing=3D"0" width=3D"100%"  style=3D"border-collapse: c=
+ollapse;"><tr><td class=3D"ActionSummaryV2-Label"  style=3D"margi=
+n-top: 0; margin-bottom: 0; font-size: 0; line-height: 19px;"><sp=
+an class=3D"TS-ActionSummaryV2-Label"  style=3D"font-family: 'Ari=
+al', serif; font-size: 13px; color:#666666;">Date</span></td></tr=
+></table></td><td width=3D"180" bgcolor=3D"#EEEEEE"  align=3D"lef=
+t" valign=3D"top" style=3D"margin-bottom: 0px; margin-top: 0px; p=
+adding-top:10.00px; padding-bottom:10.00px;"><table cellpadding=3D=
+"0" cellspacing=3D"0" width=3D"100%"  style=3D"border-collapse: c=
+ollapse;"><tr><td class=3D"ActionSummaryV2-Value"  style=3D"margi=
+n-top: 0; margin-bottom: 0; font-size: 0; line-height: 19px;"><sp=
+an class=3D"TS-ActionSummaryV2-Value"  style=3D"font-family: 'Ari=
+al', serif; font-size: 13px; color:#333333;">09/13/2022</span></t=
+d></tr></table></td></tr><tr><td width=3D"165"  align=3D"left" va=
+lign=3D"top" style=3D"margin-bottom: 0px; margin-top: 0px; paddin=
+g-top:10.00px; padding-bottom:10.00px; padding-right:15.00px;"><t=
+able cellpadding=3D"0" cellspacing=3D"0" width=3D"100%"  style=3D=
+"border-collapse: collapse;"><tr><td class=3D"ActionSummaryV2-Lab=
+el"  style=3D"margin-top: 0; margin-bottom: 0; font-size: 0; line=
+-height: 19px;"><span class=3D"TS-ActionSummaryV2-Label"  style=3D=
+"font-family: 'Arial', serif; font-size: 13px; color:#666666;">Ti=
+me</span></td></tr></table></td><td width=3D"180" bgcolor=3D"#EEE=
+EEE"  align=3D"left" valign=3D"top" style=3D"margin-bottom: 0px; =
+margin-top: 0px; padding-top:10.00px; padding-bottom:10.00px;"><t=
+able cellpadding=3D"0" cellspacing=3D"0" width=3D"100%"  style=3D=
+"border-collapse: collapse;"><tr><td class=3D"ActionSummaryV2-Val=
+ue"  style=3D"margin-top: 0; margin-bottom: 0; font-size: 0; line=
+-height: 19px;"><span class=3D"TS-ActionSummaryV2-Value"  style=3D=
+"font-family: 'Arial', serif; font-size: 13px; color:#333333;">06=
+:21 PM ET</span></td></tr></table></td></tr><tr><td colspan=3D"2"=
+ width=3D"350" height=3D"-5"  align=3D"left" valign=3D"top" style=
+=3D"margin-bottom: 0px; margin-top: 0px; padding-top:5.00px; padd=
+ing-bottom:5.00px; padding-left:5.00px; padding-right:5.00px;"></=
+td></tr></table></td></tr></table></td></tr><tr><td bgcolor=3D"#F=
+FFFFF" valign=3D"middle" align=3D"center"><table cellpadding=3D"0=
+" cellspacing=3D"0" bgcolor=3D"#EEEEEE" class=3D"SamBlueHack Mobi=
+leWidth Body2"  style=3D"border-collapse: collapse;"><tr><td alig=
+n=3D"left" valign=3D"top"  style=3D"padding-left: 30px; padding-R=
+ight: 30px;"><table id=3D"ex-table35" cellpadding=3D"0" cellspaci=
+ng=3D"0" width=3D"360"  style=3D"border-collapse: collapse;"><tr>=
+<td width=3D"360" height=3D"15"  align=3D"left" valign=3D"top" st=
+yle=3D"margin-bottom: 0px; margin-top: 0px;"></td></tr><tr><td wi=
+dth=3D"360" bgcolor=3D"#EEEEEE"  align=3D"left" valign=3D"top" st=
+yle=3D"margin-bottom: 0px; margin-top: 0px; padding-top:0.00px; p=
+adding-bottom:15.00px;"><table cellpadding=3D"0" cellspacing=3D"0=
+" width=3D"100%"  style=3D"border-collapse: collapse;"><tr><td cl=
+ass=3D"Body-Text"  style=3D"margin-top: 0; margin-bottom: 0; font=
+-size: 0; line-height: 20px;"><span class=3D"TS-Body-Text"  style=
+=3D"font-family: 'Arial', serif; font-size: 13px; color:#333333;"=
+>To </span><span  style=3D"font-family: 'Arial', serif; font-size=
+: 13px; color:#333333;"><a href=3D"https://fm.info6.citi.com/ats/=
+url.aspx?cr=3D617&amp;wu=3D1&amp;we=3D1&amp;url=3Dhttps%3A%2F%2Fo=
+nline.citi.com%2FUS%2FJRS%2Finfrastructure%2Fnewretarget.do%3Fnex=
+t_page%3Djfp%7Cdashboard%26app_store%3DY%26enid%3DB50D2AC82C1732C=
+F446BAF522FB4F4DC4E64&amp;linkName=3DCitiMobileAppDashbrd&amp;tra=
+nsId=3DE2022091386272791" title=3D"view transactions" target=3D"_=
+blank"><span class=3D"TS-Body-Text"  style=3D"font-family: 'Arial=
+', serif; font-size: 13px; text-decoration: underline; color:#007=
+6C0;">view transactions</span></a></span><span class=3D"TS-Body-T=
+ext"  style=3D"font-family: 'Arial', serif; font-size: 13px; colo=
+r:#333333;">=C2=A0on your account or </span><span  style=3D"font-=
+family: 'Arial', serif; font-size: 13px; color:#333333;"><a href=3D=
+"https://fm.info6.citi.com/ats/url.aspx?cr=3D617&amp;wu=3D1&amp;w=
+e=3D1&amp;url=3Dhttps%3A%2F%2Fonline.citi.com%2FUS%2FJRS%2Finfras=
+tructure%2Fnewretarget.do%3Fnext_page%3Djfp%7COmniChannelAlertsDe=
+epDrop%26app_store%3DY%26enid%3DB50D2AC82C1732CF446BAF522FB4F4DC4=
+E64&amp;linkName=3DCT_CitiAlerts&amp;transId=3DE2022091386272791"=
+ title=3D"modify your custom alerts" target=3D"_blank"><span clas=
+s=3D"TS-Body-Text"  style=3D"font-family: 'Arial', serif; font-si=
+ze: 13px; text-decoration: underline; color:#0076C0;">modify your=
+ custom alerts</span></a></span><span class=3D"TS-Body-Text"  sty=
+le=3D"font-family: 'Arial', serif; font-size: 13px; color:#333333=
+;">, simply visit the </span><span class=3D"TS-Body-Text"  style=3D=
+"font-family: 'Arial', serif; font-size: 13px; color:#333333;">Ci=
+ti Mobile</span><span class=3D"TS-Body-Text"  style=3D"font-famil=
+y: 'Arial', serif; font-size: 13px; color:#333333;"><sup>=C2=AE</=
+sup></span><span class=3D"TS-Body-Text"  style=3D"font-family: 'A=
+rial', serif; font-size: 13px; color:#333333;">=C2=A0App</span><s=
+pan class=3D"TS-Body-Text"  style=3D"font-family: 'Arial', serif;=
+ font-size: 13px; color:#333333;">=C2=A0or </span><span class=3D"=
+TS-Body-Text"  style=3D"font-family: 'Arial', serif; font-size: 1=
+3px; color:#333333;">Citi</span><span class=3D"TS-Body-Text"  sty=
+le=3D"font-family: 'Arial', serif; font-size: 13px; color:#333333=
+;"><sup>=C2=AE</sup></span><span class=3D"TS-Body-Text"  style=3D=
+"font-family: 'Arial', serif; font-size: 13px; color:#333333;">=C2=
+=A0Online</span><span class=3D"TS-Body-Text"  style=3D"font-famil=
+y: 'Arial', serif; font-size: 13px; color:#333333;">.</span></td>=
+</tr></table></td></tr></table></td></tr></table></td></tr><tr><t=
+d bgcolor=3D"#FFFFFF" valign=3D"middle" align=3D"center"><table c=
+ellpadding=3D"0" cellspacing=3D"0" class=3D"MobileWidth SignoffAl=
+l"  style=3D"border-collapse: collapse;"><tr><td align=3D"left" v=
+align=3D"top"><table id=3D"ex-textbox73" cellpadding=3D"0" cellsp=
+acing=3D"0" width=3D"420"  bgcolor=3D"#008FC9" style=3D"line-heig=
+ht: normal; border-collapse: separate;"><tr><td width=3D"418" hei=
+ght=3D"5" valign=3D"middle" align=3D"center"><table cellpadding=3D=
+"0" cellspacing=3D"0" width=3D"100%"  style=3D"border-collapse: c=
+ollapse;"><tr><td  style=3D"margin-top: 0; margin-bottom: 0; font=
+-size: 0; text-align: center; line-height: 7px;"></td></tr></tabl=
+e></td></tr></table></td></tr><tr><td align=3D"left" valign=3D"to=
+p"><table id=3D"ex-textbox74" cellpadding=3D"0" cellspacing=3D"0"=
+ width=3D"420" class=3D"Signoff"  bgcolor=3D"#CCCCCC" style=3D"li=
+ne-height: normal; border-collapse: separate; padding-left: 40px;=
+ padding-right: 40px; padding-bottom: 40px; padding-top: 32px;"><=
+tr><td width=3D"338" valign=3D"top" align=3D"left"><table cellpad=
+ding=3D"0" cellspacing=3D"0" width=3D"100%"  style=3D"border-coll=
+apse: collapse;"><tr><td class=3D"Signoff-Text"  style=3D"margin-=
+top: 0; margin-bottom: 0; font-size: 0; padding-bottom: 30px; lin=
+e-height: 20px;"><span  class=3D"Signoff TS-Signoff-Text"  style=3D=
+"font-family: 'Arial', serif; font-size: 13px; color:#333333;">Ci=
+ti is at your side before, during and after every purchase.</span=
+></td></tr><tr><td class=3D"Signoff-Signature"  style=3D"margin-t=
+op: 0; margin-bottom: 0; font-size: 0; text-align: right; line-he=
+ight: 1;"><span  class=3D"Signoff TS-Signoff-Signature"  style=3D=
+"font-family: 'Arial', serif; font-size: 18px; color:#333333;">Yo=
+ur Citi Team</span></td></tr></table></td></tr></table></td></tr>=
+<tr><td align=3D"left" valign=3D"top"><table id=3D"ex-textbox75" =
+cellpadding=3D"0" cellspacing=3D"0" width=3D"420"  style=3D"line-=
+height: normal; border-collapse: separate;"><tr><td width=3D"418"=
+ height=3D"15" valign=3D"top" align=3D"left"></td></tr></table></=
+td></tr></table></td></tr><tr><td bgcolor=3D"#FFFFFF" valign=3D"m=
+iddle" align=3D"center"><table cellpadding=3D"0" cellspacing=3D"0=
+" class=3D"JordanHack SamGrayHack MobileWidth EX_RESPONSIVE_TABLE=
+_480 AccountLinks"  style=3D"border-collapse: collapse;"><tr><td =
+align=3D"left" valign=3D"top"  style=3D"padding-bottom: 15px; pad=
+ding-top: 15px;"><table id=3D"ex-table36" cellpadding=3D"0" cells=
+pacing=3D"0" width=3D"130"  style=3D"border-collapse: collapse;">=
+<tr><td width=3D"130" height=3D"20"  align=3D"center" valign=3D"m=
+iddle" style=3D"margin-bottom: 0px; margin-top: 0px;"><table cell=
+padding=3D"0" cellspacing=3D"0" width=3D"100%"  style=3D"border-c=
+ollapse: collapse;"><tr><td class=3D"ContactUs-Text"  style=3D"ma=
+rgin-top: 0; margin-bottom: 0; font-size: 0; text-align: center; =
+line-height: 20px;"><span  style=3D"font-family: 'Arial', serif; =
+font-size: 13px; color:#666666;"><a href=3D"https://fm.info6.citi=
+.com/ats/url.aspx?cr=3D617&amp;wu=3D1&amp;we=3D1&amp;url=3Dhttps%=
+3A%2F%2Fonline.citi.com%2FUS%2FJRS%2Finfrastructure%2Fnewretarget=
+.do%3Fnext_page%3Djfp%7Cdashboard%26app_store%3DN%26enid%3DB50D2A=
+C82C1732CF446BAF522FB4F4DC4E64&amp;linkName=3DCN_ViewYourAcct&amp=
+;transId=3DE2022091386272791" title=3D"View Your Account" target=3D=
+"_blank"><span class=3D"TS-ContactUs-Text"  style=3D"font-family:=
+ 'Arial', serif; font-size: 13px; text-decoration: underline; col=
+or:#666666;">View Your Account</span></a></span></td></tr></table=
+></td></tr></table></td><td align=3D"left" valign=3D"top"  style=3D=
+"padding-bottom: 15px; padding-top: 15px;"><table id=3D"ex-table3=
+7" cellpadding=3D"0" cellspacing=3D"0" width=3D"180"  style=3D"bo=
+rder-collapse: collapse;"><tr><td width=3D"180" height=3D"20"  al=
+ign=3D"center" valign=3D"middle" style=3D"margin-bottom: 0px; mar=
+gin-top: 0px; border-left: #D7D7D7 1px solid; border-right: #D7D7=
+D7 1px solid;"><table cellpadding=3D"0" cellspacing=3D"0" width=3D=
+"100%"  style=3D"border-collapse: collapse;"><tr><td class=3D"Con=
+tactUs-Text"  style=3D"margin-top: 0; margin-bottom: 0; font-size=
+: 0; text-align: center; line-height: 20px;"><span  style=3D"font=
+-family: 'Arial', serif; font-size: 13px; color:#666666;"><a href=
+=3D"https://fm.info6.citi.com/ats/url.aspx?cr=3D617&amp;wu=3D1&am=
+p;we=3D1&amp;url=3Dhttps%3A%2F%2Fonline.citi.com%2FUS%2FJRS%2Finf=
+rastructure%2Fnewretarget.do%3Fnext_page%3Djfp%7Cjcbol_pnt_crecar=
+pay_EOT%26app_store%3DN%26enid%3DB50D2AC82C1732CF446BAF522FB4F4DC=
+4E64&amp;linkName=3DCN_PAY_ONLINE_URL&amp;transId=3DE202209138627=
+2791" title=3D"Pay Your Bill" target=3D"_blank"><span class=3D"TS=
+-ContactUs-Text"  style=3D"font-family: 'Arial', serif; font-size=
+: 13px; text-decoration: underline; color:#666666;">Pay Your Bill=
+</span></a></span></td></tr></table></td></tr></table></td><td al=
+ign=3D"left" valign=3D"top"  style=3D"padding-bottom: 15px; paddi=
+ng-top: 15px;"><table id=3D"ex-table38" cellpadding=3D"0" cellspa=
+cing=3D"0" width=3D"110"  style=3D"border-collapse: collapse;"><t=
+r><td width=3D"111" height=3D"20"  align=3D"center" valign=3D"mid=
+dle" style=3D"margin-bottom: 0px; margin-top: 0px;"><table cellpa=
+dding=3D"0" cellspacing=3D"0" width=3D"100%"  style=3D"border-col=
+lapse: collapse;"><tr><td class=3D"ContactUs-Text"  style=3D"marg=
+in-top: 0; margin-bottom: 0; font-size: 0; text-align: center; li=
+ne-height: 20px;"><span  style=3D"font-family: 'Arial', serif; fo=
+nt-size: 13px; color:#666666;"><a href=3D"https://fm.info6.citi.c=
+om/ats/url.aspx?cr=3D617&amp;wu=3D1&amp;we=3D1&amp;url=3Dhttps%3A=
+%2F%2Fonline.citibank.com%2FUS%2FJRS%2Fportal%2Fcontactus.do%3FID=
+%3DContactUsCards%26enid%3DB50D2AC82C1732CF446BAF522FB4F4DC4E64&a=
+mp;linkName=3DCN_CONTACT_US_URL&amp;transId=3DE2022091386272791" =
+title=3D"Contact Us" target=3D"_blank"><span class=3D"TS-ContactU=
+s-Text"  style=3D"font-family: 'Arial', serif; font-size: 13px; t=
+ext-decoration: underline; color:#666666;">Contact Us</span></a><=
+/span></td></tr></table></td></tr></table></td></tr></table></td>=
+</tr><tr><td bgcolor=3D"#FFFFFF" valign=3D"middle" align=3D"cente=
+r"><table cellpadding=3D"0" cellspacing=3D"0" class=3D"PLTModule"=
+  style=3D"border-collapse: collapse;"><tr><td align=3D"left" val=
+ign=3D"top"  style=3D"padding-top: 15px;"><table cellpadding=3D"0=
+" cellspacing=3D"0"  style=3D"border-collapse: collapse;"><tr><td=
+ class=3D"HideDesktopPLT" height=3D"110"><img id=3D"ex-image18" s=
+rc=3D"https://snamwpm.eccmp.com/wpm/617/ContentUploads/misc/Feb20=
+_PLT_Desktop.png" alt=3D"Citi, Welcome what's next"  style=3D"dis=
+play: block;"/></td></tr></table></td><td align=3D"left" valign=3D=
+"top"  style=3D"padding-top: 15px;"><table cellpadding=3D"0" cell=
+spacing=3D"0"  style=3D"border-collapse: collapse;"><tr><td class=
+=3D"ShowMobilePLT" style=3D"overflow: hidden; float: center; disp=
+lay: none; padding-top:15.00px; padding-bottom:0.00px;" height=3D=
+"110"><img id=3D"ex-image19" src=3D"https://snamwpm.eccmp.com/wpm=
+/617/ContentUploads/misc/Feb20_PLT_Mobile.png" alt=3D"Citi, Welco=
+me what's next" /></td></tr></table></td></tr></table></td></tr><=
+tr><td bgcolor=3D"#EEEEEE" valign=3D"middle" align=3D"center"><ta=
+ble cellpadding=3D"0" cellspacing=3D"0" bgcolor=3D"#EEEEEE" class=
+=3D"MobileWidth"  style=3D"border-collapse: collapse;"><tr><td al=
+ign=3D"left" valign=3D"top"  style=3D"padding-left: 15px; padding=
+-Right: 15px;"><table id=3D"ex-textbox76" cellpadding=3D"0" cells=
+pacing=3D"0" width=3D"620"  bgcolor=3D"#EEEEEE" style=3D"line-hei=
+ght: normal; border-collapse: separate;"><tr><td width=3D"618" he=
+ight=3D"16" valign=3D"top" align=3D"left"></td></tr></table></td>=
+</tr><tr><td align=3D"left" valign=3D"top"  style=3D"padding-left=
+: 15px; padding-Right: 15px;"><table id=3D"ex-textbox77" cellpadd=
+ing=3D"0" cellspacing=3D"0" width=3D"620"  style=3D"line-height: =
+normal; border-collapse: separate; padding-bottom: 3px;"><tr><td =
+width=3D"618" valign=3D"top" align=3D"left"><table cellpadding=3D=
+"0" cellspacing=3D"0" width=3D"100%"  style=3D"border-collapse: c=
+ollapse;"><tr><td role=3D'heading' aria-level=3D'2' class=3D"Emai=
+lApps-Intro"  style=3D"margin-top: 0; margin-bottom: 0; font-size=
+: 0; line-height: 13px;"><span class=3D"TS-EmailApps-Text"  style=
+=3D"font-family: 'Arial', serif; font-size: 10px; color:#666666;"=
+>Download the </span><span class=3D"TS-EmailApps-Text"  style=3D"=
+font-family: 'Arial', serif; font-size: 10px; color:#666666;">Cit=
+i Mobile</span><span class=3D"TS-EmailApps-Text"  style=3D"font-f=
+amily: 'Arial', serif; font-size: 10px; color:#666666;"><sup>=C2=AE=
+</sup></span><span class=3D"TS-EmailApps-Text"  style=3D"font-fam=
+ily: 'Arial', serif; font-size: 10px; color:#666666;">=C2=A0App</=
+span></td></tr></table></td></tr></table></td></tr><tr><td align=3D=
+"left" valign=3D"top"  style=3D"padding-left: 15px; padding-Right=
+: 15px;"><table cellpadding=3D"0" cellspacing=3D"0" class=3D"EX_R=
+ESPONSIVE_TABLE_480 AppStore"  style=3D"border-collapse: collapse=
+;"><tr><td align=3D"left" valign=3D"top"><table id=3D"ex-textbox7=
+8" cellpadding=3D"0" cellspacing=3D"0" width=3D"135"  style=3D"li=
+ne-height: normal; border-collapse: separate;"><tr><td width=3D"1=
+33" height=3D"40" valign=3D"middle" align=3D"left"><table cellpad=
+ding=3D"0" cellspacing=3D"0" width=3D"100%"  style=3D"border-coll=
+apse: collapse;"><tr><td  style=3D"margin-top: 0; margin-bottom: =
+0; font-size: 0;"><span  style=3D"font-family: 'Arial', serif; fo=
+nt-size: 15px; line-height: 17px; color:#000000;"><a href=3D"http=
+s://fm.info6.citi.com/ats/url.aspx?cr=3D617&amp;wu=3D1&amp;we=3D1=
+&amp;url=3Dhttps%3A%2F%2Fitunes.apple.com%2Fapp%2Fciti-mobile-sm%=
+2Fid301724680%3Fmt%3D8%26enid%3DB50D2AC82C1732CF446BAF522FB4F4DC4=
+E64&amp;linkName=3DCN_APPSTORE&amp;transId=3DE2022091386272791" t=
+itle=3D"Download the Citi Mobile App from the App Store" target=3D=
+"_blank"><img src=3D"https://snamwpm.eccmp.com/wpm/617/ContentUpl=
+oads/misc/Feb20_AppStore_transp.png" alt=3D""/></a></span></td></=
+tr></table></td></tr></table></td><td width=3D"13"></td><td align=
+=3D"left" valign=3D"top"><table id=3D"ex-textbox79" cellpadding=3D=
+"0" cellspacing=3D"0" width=3D"134"  style=3D"line-height: normal=
+; border-collapse: separate;"><tr><td width=3D"132" height=3D"40"=
+ valign=3D"middle" align=3D"left"><table cellpadding=3D"0" cellsp=
+acing=3D"0" width=3D"100%"  style=3D"border-collapse: collapse;">=
+<tr><td  style=3D"margin-top: 0; margin-bottom: 0; font-size: 0;"=
+><span  style=3D"font-family: 'Arial', serif; font-size: 15px; li=
+ne-height: 17px; color:#000000;"><a href=3D"https://fm.info6.citi=
+.com/ats/url.aspx?cr=3D617&amp;wu=3D1&amp;we=3D1&amp;url=3Dhttps%=
+3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dcom.citi.=
+citimobile%26enid%3DB50D2AC82C1732CF446BAF522FB4F4DC4E64&amp;link=
+Name=3DCN_GOOGLEPLAY&amp;transId=3DE2022091386272791" title=3D"Do=
+wnload the Citi Mobile App from Google Play" target=3D"_blank"><i=
+mg src=3D"https://snamwpm.eccmp.com/wpm/617/ContentUploads/misc/F=
+eb20_GooglePlay_transp.png" alt=3D""/></a></span></td></tr></tabl=
+e></td></tr></table></td></tr></table></td></tr><tr><td align=3D"=
+left" valign=3D"top"  style=3D"padding-left: 15px; padding-Right:=
+ 15px;"><table id=3D"ex-textbox80" cellpadding=3D"0" cellspacing=3D=
+"0" width=3D"620"  bgcolor=3D"#EEEEEE" style=3D"line-height: norm=
+al; border-collapse: separate; padding-top: 7px;"><tr><td width=3D=
+"618" valign=3D"top" align=3D"left"><table cellpadding=3D"0" cell=
+spacing=3D"0" width=3D"100%"  style=3D"border-collapse: collapse;=
+"><tr><td class=3D"EmailApps-Concl"  style=3D"margin-top: 0; marg=
+in-bottom: 0; font-size: 0; line-height: 12px;"><span class=3D"TS=
+-EmailApps-Text"  style=3D"font-family: 'Arial', serif; font-size=
+: 10px; color:#666666;">Apple and the Apple logo are trademarks o=
+f Apple Inc. Registered in the U.S. and other countries. App Stor=
+e is a service mark of Apple Inc., registered in the U.S. and oth=
+er countries. Android, Google Play, and the Google Play logo are =
+trademarks of Google LLC.<br /><br /></span></td></tr><tr><td cla=
+ss=3D"EmailApps-Concl"  style=3D"margin-top: 0; margin-bottom: 0;=
+ font-size: 0; line-height: 12px;"><span class=3D"TS-EmailApps-Te=
+xt"  style=3D"font-family: 'Arial', serif; font-size: 10px; color=
+:#666666;">Citibank</span><span class=3D"TS-EmailApps-Text"  styl=
+e=3D"font-family: 'Arial', serif; font-size: 10px; color:#666666;=
+"><sup>=C2=AE</sup></span><span class=3D"TS-EmailApps-Text"  styl=
+e=3D"font-family: 'Arial', serif; font-size: 10px; color:#666666;=
+"> is not responsible for products and services offered by other =
+companies.<br /><br /></span></td></tr></table></td></tr></table>=
+</td></tr></table></td></tr><tr><td valign=3D"middle" align=3D"ce=
+nter"><table cellpadding=3D"0" cellspacing=3D"0" bgcolor=3D"#EEEE=
+EE" class=3D"MobileWidth"  style=3D"border-collapse: collapse;"><=
+tr><td align=3D"left" valign=3D"top"  style=3D"padding-left: 15px=
+; padding-right: 15px; ;"><table cellpadding=3D"0" cellspacing=3D=
+"0" bgcolor=3D"#EEEEEE"  style=3D"border-collapse: collapse;"><tr=
+><td align=3D"left" valign=3D"top"><table cellpadding=3D"0" cells=
+pacing=3D"0" bgcolor=3D"#EEEEEE"  style=3D"border-collapse: colla=
+pse;"><tr><td align=3D"left" valign=3D"top"></td><td align=3D"lef=
+t" valign=3D"top"></td></tr></table></td></tr><tr><td align=3D"le=
+ft" valign=3D"top"><table cellpadding=3D"0" cellspacing=3D"0" bgc=
+olor=3D"#EEEEEE" class=3D"FooterLogo JordanHack SamGrayHack EX_RE=
+SPONSIVE_TABLE_480"  style=3D"border-collapse: collapse;"><tr><td=
+ align=3D"left" valign=3D"top"></td><td align=3D"left" valign=3D"=
+top"></td><td align=3D"left" valign=3D"top"></td></tr></table></t=
+d></tr></table></td></tr></table></td></tr><tr><td bgcolor=3D"#EE=
+EEEE" valign=3D"middle" align=3D"center"><table cellpadding=3D"0"=
+ cellspacing=3D"0" bgcolor=3D"#EEEEEE" class=3D"MobileWidth"  sty=
+le=3D"border-collapse: collapse;"><tr><td align=3D"left" valign=3D=
+"top"  style=3D"padding-left: 15px; padding-right: 15px; ;"><tabl=
+e cellpadding=3D"0" cellspacing=3D"0" bgcolor=3D"#EEEEEE"  style=3D=
+"border-collapse: collapse;"><tr><td align=3D"left" valign=3D"top=
+"><table cellpadding=3D"0" cellspacing=3D"0" bgcolor=3D"#EEEEEE" =
+class=3D"FooterLogo JordanHack SamGrayHack EX_RESPONSIVE_TABLE_48=
+0"  style=3D"border-collapse: collapse;"><tr><td align=3D"left" v=
+align=3D"top"><table cellpadding=3D"0" cellspacing=3D"0"  style=3D=
+"border-collapse: collapse;"><tr><td width=3D"485" height=3D"32">=
+<img id=3D"ex-image20" src=3D"https://snamwpm.eccmp.com/wpm/617/C=
+ontentUploads/logos/Jun20_Citi_RGB_BWFooterLogo.png" alt=3D"Citi"=
+  style=3D"display: block;"/></td></tr></table></td><td align=3D"=
+left" valign=3D"top"><table id=3D"ex-textbox81" cellpadding=3D"0"=
+ cellspacing=3D"0" width=3D"75"  style=3D"line-height: normal; bo=
+rder-collapse: separate;"><tr><td width=3D"73" height=3D"32" vali=
+gn=3D"bottom" align=3D"left"><table cellpadding=3D"0" cellspacing=
+=3D"0" width=3D"100%"  style=3D"border-collapse: collapse;"><tr><=
+td class=3D"Privacy-Button1"  style=3D"margin-top: 0; margin-bott=
+om: 0; font-size: 0;"><span  style=3D"font-family: 'Arial', serif=
+; font-size: 12px; line-height: 14px; color:#666666;"><a href=3D"=
+https://fm.info6.citi.com/ats/url.aspx?cr=3D617&amp;wu=3D1&amp;we=
+=3D1&amp;url=3Dhttps%3A%2F%2Fwww.citibank.com%2Fus%2Fcards%2Fpriv=
+acy.htm%26enid%3DB50D2AC82C1732CF446BAF522FB4F4DC4E64&amp;linkNam=
+e=3DCN_PRIVACY_URL&amp;transId=3DE2022091386272791" title=3D"Priv=
+acy" target=3D"_blank"><span class=3D"TS-Privacy-Button"  style=3D=
+"font-family: 'Arial', serif; font-size: 12px; line-height: 14px;=
+ text-decoration: underline; color:#666666;">Privacy</span></a></=
+span></td></tr></table></td></tr></table></td><td align=3D"left" =
+valign=3D"top"><table id=3D"ex-textbox82" cellpadding=3D"0" cells=
+pacing=3D"0" width=3D"60"  style=3D"line-height: normal; border-c=
+ollapse: separate;"><tr><td width=3D"58" height=3D"32" valign=3D"=
+bottom" align=3D"left"><table cellpadding=3D"0" cellspacing=3D"0"=
+ width=3D"100%"  style=3D"border-collapse: collapse;"><tr><td cla=
+ss=3D"Privacy-Button2"  style=3D"margin-top: 0; margin-bottom: 0;=
+ font-size: 0;"><span  style=3D"font-family: 'Arial', serif; font=
+-size: 12px; line-height: 14px; color:#666666;"><a href=3D"https:=
+//fm.info6.citi.com/ats/url.aspx?cr=3D617&amp;wu=3D1&amp;we=3D1&a=
+mp;url=3Dhttps%3A%2F%2Fonline.citibank.com%2FUS%2FJRS%2Fpands%2Fd=
+etail.do%3FID%3DEmailFraud%26enid%3DB50D2AC82C1732CF446BAF522FB4F=
+4DC4E64&amp;linkName=3DCN_SECURITY_URL&amp;transId=3DE20220913862=
+72791" title=3D"Security" target=3D"_blank"><span class=3D"TS-Pri=
+vacy-Button"  style=3D"font-family: 'Arial', serif; font-size: 12=
+px; line-height: 14px; text-decoration: underline; color:#666666;=
+">Security</span></a></span></td></tr></table></td></tr></table><=
+/td></tr></table></td></tr><tr><td align=3D"left" valign=3D"top">=
+<table id=3D"ex-table39" cellpadding=3D"0" cellspacing=3D"0" widt=
+h=3D"620"  class=3D"SamBlueHack" style=3D"border-collapse: collap=
+se;"><tr><td colspan=3D"2" width=3D"620"  align=3D"left" valign=3D=
+"top" style=3D"margin-bottom: 0px; margin-top: 0px; padding-top:1=
+5.00px; padding-bottom:0.00px;"><table cellpadding=3D"0" cellspac=
+ing=3D"0" width=3D"100%"  style=3D"border-collapse: collapse;"><t=
+r><td class=3D"Footnote-Text"  style=3D"margin-top: 0; margin-bot=
+tom: 0; font-size: 0; padding-bottom: 15px; line-height: 12px;"><=
+img src=3D"https://accountonline.citi.com/cards/svc/img/logo/CI_S=
+Z_icn_lock.gif" alt=3D""/><span  class=3D"SamBlueHack"  style=3D"=
+font-family: 'Arial', serif; font-size: 9px; color:#000000;">The =
+security zone at the top of this email helps you verify that it w=
+as in fact sent by Citi.</span></td></tr><tr><td class=3D"Footnot=
+e-Text"  style=3D"margin-top: 0; margin-bottom: 0; font-size: 0; =
+padding-bottom: 15px; line-height: 12px;"><span  class=3D"SamBlue=
+Hack TS-Footnote-TextUnd" role=3D"heading" aria-level=3D"3"  styl=
+e=3D"font-family: 'Arial', serif; font-size: 9px; text-decoration=
+: underline; color:#666666;">ABOUT THIS MESSAGE</span><span  clas=
+s=3D"SamBlueHack TS-Footnote-Text"  style=3D"font-family: 'Arial'=
+, serif; font-size: 9px; color:#666666;"><br /></span><span  clas=
+s=3D"SamBlueHack TS-Footnote-Text"  style=3D"font-family: 'Arial'=
+, serif; font-size: 9px; color:#666666;">This email is sent by Ci=
+ti Cards to keep you informed about your Citi credit card, includ=
+ing updates about your account activity and information about fea=
+tures and services to help you effectively manage your account. H=
+ave questions? Please do not reply to this service email. Instead=
+, just </span><span  class=3D"SamBlueHack"  style=3D"font-family:=
+ 'Arial', serif; font-size: 9px; color:#666666;"><a href=3D"https=
+://fm.info6.citi.com/ats/url.aspx?cr=3D617&amp;wu=3D1&amp;we=3D1&=
+amp;url=3Dhttps%3A%2F%2Fonline.citibank.com%2FUS%2FJRS%2Fportal%2=
+Fcontactus.do%3FID%3DContactUsCards%26enid%3DB50D2AC82C1732CF446B=
+AF522FB4F4DC4E64&amp;linkName=3DCN_CONTACT_US_URL&amp;transId=3DE=
+2022091386272791" title=3D"contact us" target=3D"_blank"><span  c=
+lass=3D"SamBlueHack TS-Footnote-Text"  style=3D"font-family: 'Ari=
+al', serif; font-size: 9px; text-decoration: underline; color:#00=
+76C0;">contact us</span></a></span><span  class=3D"SamBlueHack TS=
+-Footnote-Text"  style=3D"font-family: 'Arial', serif; font-size:=
+ 9px; color:#666666;">.</span></td></tr><tr><td class=3D"Footnote=
+-Text"  style=3D"margin-top: 0; margin-bottom: 0; font-size: 0; p=
+adding-bottom: 15px; line-height: 12px;"><span  class=3D"SamBlueH=
+ack TS-Footnote-Text"  style=3D"font-family: 'Arial', serif; font=
+-size: 9px; color:#666666;">Our mailing address: </span><span  cl=
+ass=3D"SamBlueHack TS-Footnote-Text"  style=3D"font-family: 'Aria=
+l', serif; font-size: 9px; color:#666666;">Citibank Customer Serv=
+ice P. O. Box 6500 Sioux Falls, SD 57117</span></td></tr></table>=
+</td></tr></table></td></tr><tr><td align=3D"left" valign=3D"top"=
+></td></tr><tr><td align=3D"left" valign=3D"top"></td></tr><tr><t=
+d align=3D"left" valign=3D"top"><table id=3D"ex-table40" cellpadd=
+ing=3D"0" cellspacing=3D"0" width=3D"618"  style=3D"border-collap=
+se: collapse;"><tr><td width=3D"618"  align=3D"left" valign=3D"to=
+p" style=3D"margin-bottom: 0px; margin-top: 0px;"><table cellpadd=
+ing=3D"0" cellspacing=3D"0" width=3D"100%"  style=3D"border-colla=
+pse: collapse;"><tr><td class=3D"Footnote-Text"  style=3D"margin-=
+top: 0; margin-bottom: 0; font-size: 0; padding-bottom: 15px; lin=
+e-height: 12px;"><span  style=3D"font-family: 'Arial', serif; fon=
+t-size: 9px; color:#000000;"><sup>=C2=A9</sup></span><span class=3D=
+"TS-Footnote-Text"  style=3D"font-family: 'Arial', serif; font-si=
+ze: 9px; color:#666666;">2022 Citibank, N.A. Citi, Citibank, Citi=
+ with Arc Design and Citi Mobile are registered service marks of =
+Citigroup Inc.</span></td></tr></table></td></tr></table></td></t=
+r></table></td></tr></table></td></tr><tr><td bgcolor=3D"#EEEEEE"=
+ valign=3D"middle" align=3D"center"><table cellpadding=3D"0" cell=
+spacing=3D"0" bgcolor=3D"#EEEEEE" class=3D"MobileWidth Auditline =
+PUB47 7/24/2017"  style=3D"border-collapse: collapse;"><tr><td al=
+ign=3D"left" valign=3D"top"  style=3D"padding-left: 15px; padding=
+-right: 15px; padding-bottom: 30px; padding-top: 10px;"><div aria=
+-hidden=3D"true"><table id=3D"ex-textbox83" cellpadding=3D"0" cel=
+lspacing=3D"0" width=3D"620"  style=3D"line-height: normal; borde=
+r-collapse: separate;"><tr><td width=3D"618" valign=3D"top" align=
+=3D"left"><table cellpadding=3D"0" cellspacing=3D"0" width=3D"100=
+%"  style=3D"border-collapse: collapse;"><tr><td aria-hidden=3D"t=
+rue"  style=3D"margin-top: 0; margin-bottom: 0; font-size: 0;"><s=
+pan  style=3D"font-family: 'Arial', serif; font-size: 11px; line-=
+height: 13px; color:#666666;">LBCA2012001 E2022091386272791 142</=
+span></td></tr></table></td></tr></table></div></td></tr></table>=
+</td></tr><tr><td bgcolor=3D"#EEEEEE" valign=3D"middle" align=3D"=
+center"><table cellpadding=3D"0" cellspacing=3D"0" bgcolor=3D"#EE=
+EEEE"  style=3D"border-collapse: collapse;"><tr><td align=3D"left=
+" valign=3D"top"  style=3D"padding-left: 15px; padding-right: 15p=
+x; padding-bottom: 30px; padding-top: 10px;"></td></tr></table></=
+td></tr></table></td></tr></table></td></tr></body></html>=0A=0A<=
+html>=0A<body><img src=3D"https://l.info6.citi.com/rts/open.aspx?=
+tp=3Dk-F7hweSyfxHq-2ztnSrbT0PH-1DZkJcXHic0-AlOVWtE3JWp-1uJ1ezJM1n=
+I-A7nnrDubnYX-FrDE2rA9H5E-LQl9Bxxky1u-I9Egz10Ooh1-6sNABv0GUnZ" he=
+ight=3D"1" width=3D"1" style=3D"display:none"></body>=0A</html>
+----boundary_3077047_8261d5ea-f276-4ebc-a732-d4540f2a39c8--
+
+

@@ -16,6 +16,8 @@ thiserror = "1.0"
 log = "0.4.17"
 simplelog = "0.12.0"
 async-trait = "0.1.53"
+scraper = "0.13.0"
+itertools = "0.10.4"
 
 # For annoying reasons, we must pin exactly the same versions as async-imap if we want to use
 # their types.
