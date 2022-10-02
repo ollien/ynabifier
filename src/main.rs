@@ -3,8 +3,6 @@ extern crate log;
 
 use futures::{stream::StreamExt, Future};
 use log::LevelFilter;
-use simplelog::{Config as LogConfig, SimpleLogger};
-use std::collections::HashMap;
 use std::{fs::File, sync::Arc};
 use tokio::runtime::Runtime;
 use ynabifier::parse::{Transaction, TransactionEmailParser};
@@ -16,7 +14,7 @@ use ynabifier::{
 };
 
 fn main() {
-    SimpleLogger::init(LevelFilter::Debug, LogConfig::default()).expect("setup failed");
+    setup_logger().expect("failed to seutp logger");
     let config_file = File::open("config.yml").expect("failed to open config file");
     let config =
         serde_yaml::from_reader::<_, Config>(config_file).expect("failed to parse config file");
@@ -48,6 +46,25 @@ fn main() {
             }
         }
     });
+}
+
+fn setup_logger() -> Result<(), fern::InitError> {
+    fern::Dispatch::new()
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "{} [{}] [{}] {}",
+                chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
+                record.level(),
+                record.target(),
+                message
+            ))
+        })
+        .level(LevelFilter::Info)
+        .level_for("ynabifier", LevelFilter::Debug)
+        .chain(std::io::stderr())
+        .apply()?;
+
+    Ok(())
 }
 
 fn try_parse_email<'a, I>(parser_iter: I, msg: &Message) -> Option<Transaction>
