@@ -14,10 +14,11 @@ use ynabifier::{
 };
 
 fn main() {
-    setup_logger().expect("failed to seutp logger");
     let config_file = File::open("config.yml").expect("failed to open config file");
     let config =
         serde_yaml::from_reader::<_, Config>(config_file).expect("failed to parse config file");
+
+    setup_logger(config.log_level()).expect("failed to seutp logger");
 
     let runtime = Runtime::new().expect("failed to create runtime");
     let parsers = vec![
@@ -48,7 +49,7 @@ fn main() {
     });
 }
 
-fn setup_logger() -> Result<(), fern::InitError> {
+fn setup_logger(log_level: LevelFilter) -> Result<(), fern::InitError> {
     fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
@@ -59,8 +60,8 @@ fn setup_logger() -> Result<(), fern::InitError> {
                 message
             ))
         })
-        .level(LevelFilter::Info)
-        .level_for("ynabifier", LevelFilter::Debug)
+        .level(LevelFilter::Error)
+        .level_for("ynabifier", log_level)
         .chain(std::io::stderr())
         .apply()?;
 

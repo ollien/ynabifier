@@ -1,8 +1,24 @@
+use log::LevelFilter;
 use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
+enum LogLevel {
+    #[serde(rename = "debug")]
+    Debug,
+    #[serde(rename = "info")]
+    Info,
+    #[serde(rename = "warning")]
+    Warning,
+    #[serde(rename = "error")]
+    Error,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct Config {
+    #[serde(default = "defaults::log_level")]
+    log_level: LogLevel,
     imap: IMAP,
 }
 
@@ -18,6 +34,16 @@ pub struct IMAP {
 }
 
 impl Config {
+    #[must_use]
+    pub fn log_level(&self) -> LevelFilter {
+        match &self.log_level {
+            LogLevel::Debug => LevelFilter::Debug,
+            LogLevel::Info => LevelFilter::Info,
+            LogLevel::Warning => LevelFilter::Warn,
+            LogLevel::Error => LevelFilter::Error,
+        }
+    }
+
     #[must_use]
     pub fn imap(&self) -> &IMAP {
         &self.imap
@@ -47,6 +73,11 @@ impl IMAP {
 }
 
 mod defaults {
+
+    pub(super) fn log_level() -> super::LogLevel {
+        super::LogLevel::Info
+    }
+
     pub(super) fn port() -> u16 {
         993
     }
@@ -60,6 +91,7 @@ mod tests {
     fn test_deserialize_config() {
         let data = textwrap::dedent(
             r#"
+            log_level: debug
             imap:
                 domain: imap.google.com
                 port: 993
@@ -69,6 +101,7 @@ mod tests {
         );
 
         let expected = Config {
+            log_level: LogLevel::Debug,
             imap: IMAP {
                 domain: "imap.google.com".to_string(),
                 port: 993,
