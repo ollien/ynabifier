@@ -21,6 +21,7 @@ pub struct Multi {
 }
 
 impl Multi {
+    #[must_use]
     pub fn new(cancels: Vec<Box<dyn Cancel + Send>>) -> Self {
         Self { cancels }
     }

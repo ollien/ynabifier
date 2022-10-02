@@ -8,7 +8,14 @@ use super::{Transaction, TransactionEmailParser};
 pub struct EmailParser;
 
 impl EmailParser {
+    #[must_use]
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for EmailParser {
+    fn default() -> Self {
         Self
     }
 }

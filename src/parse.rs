@@ -32,10 +32,12 @@ pub trait TransactionEmailParser {
 }
 
 impl Transaction {
+    #[must_use]
     pub fn payee(&self) -> &str {
         &self.payee
     }
 
+    #[must_use]
     pub fn amount(&self) -> &str {
         &self.amount
     }

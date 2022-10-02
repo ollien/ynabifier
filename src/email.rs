@@ -13,7 +13,10 @@ use std::{
 use thiserror::Error;
 
 use crate::{
-    task::{CancelOnDrop, MultiCancel, Spawn, SpawnError, multi::{self, Runner, Task}},
+    task::{
+        multi::{self, Runner, Task},
+        CancelOnDrop, MultiCancel, Spawn, SpawnError,
+    },
     CHANNEL_SIZE,
 };
 
@@ -35,16 +38,22 @@ pub struct Message {
 }
 
 impl Message {
+    #[must_use]
     pub fn new(raw: Vec<u8>) -> Self {
         Self { raw }
     }
 
     /// Get the raw bytes of this message
+    #[must_use]
     pub fn raw(&self) -> &[u8] {
         self.raw.as_ref()
     }
 
     /// Parse this message as an email.
+    ///
+    /// # Errors
+    /// An error is returned if this message not is not parsable as an email.
+    /// See [`mailparse::parse_mail`] for more details.
     pub fn parsed(&self) -> Result<ParsedMail<'_>, MailParseError> {
         mailparse::parse_mail(self.raw.as_ref())
     }
@@ -76,10 +85,6 @@ pub struct MessageStream {
 }
 
 impl SequenceNumber {
-    pub fn new(seq: u32) -> Self {
-        Self(seq)
-    }
-
     /// Get the integral value of this sequence number
     pub fn value(self) -> u32 {
         self.0
@@ -103,13 +108,14 @@ impl Stream for MessageStream {
 
 #[derive(Error, Debug)]
 enum StreamError<F: MessageFetcher, O: Sink<T>, T>
-    where O::Error: Debug
+where
+    O::Error: Debug,
 {
     #[error("{0:?}")]
     FetchFailed(F::Error),
 
     #[error("{0:?}")]
-    SinkFailed(O::Error)
+    SinkFailed(O::Error),
 }
 
 /// Get a stream of any messages that come into the given [`SequenceNumberStreamer`]. These messages will be fetched
@@ -135,24 +141,23 @@ where
     let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
 
     let spawn_clone = spawn.clone();
-    let (runner, runner_cancel_handle) = multi::listen_for_tasks(spawn).map_err(StreamSetupError::SpawnFailed)?;
-    let stream_cancel = spawn_clone.spawn(async move {
+    let (runner, runner_cancel_handle) =
+        multi::listen_for_tasks(spawn).map_err(StreamSetupError::SpawnFailed)?;
+    let stream_cancel = spawn_clone
+        .spawn(async move {
             let mut runner = runner;
 
-            stream_incoming_messages_to_sink(
-                &mut runner,
-                sequence_number_stream,
-                fetcher,
-                tx
-            ).await;
+            stream_incoming_messages_to_sink(&mut runner, sequence_number_stream, fetcher, tx)
+                .await;
         })
         .map_err(StreamSetupError::SpawnFailed)?;
 
     Ok(MessageStream {
         output_stream: rx,
-        _cancel_guard: CancelOnDrop::new(
-            MultiCancel::new(vec![Box::new(stream_cancel), Box::new(runner_cancel_handle)])
-        ),
+        _cancel_guard: CancelOnDrop::new(MultiCancel::new(vec![
+            Box::new(stream_cancel),
+            Box::new(runner_cancel_handle),
+        ])),
     })
 }
 /// Fetch any messages from the incoming stream of sequence numbers, and send them to the output sink.
@@ -162,7 +167,7 @@ async fn stream_incoming_messages_to_sink<N, F, O>(
     runner: &mut Runner,
     mut sequence_number_stream: N,
     fetcher: F,
-    output_sink: O
+    output_sink: O,
 ) where
     N: Stream<Item = SequenceNumber> + Unpin,
     F: MessageFetcher + Send + Sync + 'static,
@@ -179,30 +184,39 @@ async fn stream_incoming_messages_to_sink<N, F, O>(
             let fetcher = fetcher_arc_clone;
             let mut output_sink_clone = output_sink_clone;
 
-            let fetch_res = fetch_and_sink_message(fetcher.as_ref(), &mut output_sink_clone, sequence_number).await;
+            let fetch_res =
+                fetch_and_sink_message(fetcher.as_ref(), &mut output_sink_clone, sequence_number)
+                    .await;
             match fetch_res {
                 Ok(_) => {}
                 Err(StreamError::FetchFailed(err)) => error!("failed to fetch message: {:?}", err),
-                Err(StreamError::SinkFailed(err)) => error!("failed to send fetched message to output sink: {:?}", err)
+                Err(StreamError::SinkFailed(err)) => {
+                    error!("failed to send fetched message to output sink: {:?}", err);
+                }
             }
         };
 
-        let fetch_task = Task::new(format!("Fetch sequence number {}", sequence_number), Box::new(fetch_future));
+        let fetch_task = Task::new(
+            format!("Fetch sequence number {}", sequence_number),
+            Box::new(fetch_future),
+        );
         debug!("submitting task for sequence number {}", sequence_number);
         let spawn_res = runner.submit_new_task(fetch_task).await;
 
         if let Err(spawn_err) = spawn_res {
-            error!("failed to spawn task to fetch sequence number {sequence_number}: {spawn_err:?}");
+            error!(
+                "failed to spawn task to fetch sequence number {sequence_number}: {spawn_err:?}"
+            );
         }
     }
 }
 
 /// Fetch a message with the given sequence number, and send its output to this Task's
 /// output sink. Errors for this are logged, as this is intended to be run in a forked off task.
-async fn fetch_and_sink_message<F, O> (
+async fn fetch_and_sink_message<F, O>(
     fetcher: &F,
     output_sink: &mut O,
-    sequence_number: SequenceNumber
+    sequence_number: SequenceNumber,
 ) -> Result<(), StreamError<F, O, Message>>
 where
     F: MessageFetcher,
@@ -259,7 +273,10 @@ mod tests {
 
         pub fn stage_message(&mut self, seq: SequenceNumber, message: &str) {
             self.messages.insert(
-                seq, Message{raw: message.bytes().collect()},
+                seq,
+                Message {
+                    raw: message.bytes().collect(),
+                },
             );
         }
     }
