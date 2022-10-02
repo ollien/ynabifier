@@ -5,7 +5,6 @@ use super::{MessageFetcher, SequenceNumber};
 use async_imap::{error::Error as IMAPError, types::Fetch};
 use async_trait::async_trait;
 use futures::StreamExt;
-use mailparse::{MailParseError, ParsedMail};
 use thiserror::Error;
 
 /// Indicates an error that occured during the fetch process

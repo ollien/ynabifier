@@ -24,7 +24,7 @@ const CHANNEL_SIZE: usize = 16;
 
 mod config;
 mod email;
-mod parse;
+pub mod parse;
 pub mod task;
 #[cfg(test)]
 mod testutil;
