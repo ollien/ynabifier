@@ -3,7 +3,7 @@ use scraper::{Html, Selector};
 
 use crate::Message;
 
-use super::{Transaction, TransactionEmailParser};
+use super::{NaiveDate, Transaction, TransactionEmailParser};
 
 pub struct EmailParser;
 
@@ -50,11 +50,13 @@ impl TransactionEmailParser for EmailParser {
             .flat_map(|element| element.text());
 
         let amount = find_amount_from_table_text(td_text_iter.clone())?;
-        let payee = find_payee_from_table_text(td_text_iter)?;
+        let payee = find_payee_from_table_text(td_text_iter.clone())?;
+        let date = find_date_from_table_text(td_text_iter)?;
 
         let trans = Transaction {
             amount: amount.to_string(),
             payee: payee.to_string(),
+            date,
         };
 
         Ok(trans)
@@ -65,15 +67,33 @@ fn find_payee_from_table_text<'a, I>(table_text_iter: I) -> Result<&'a str, supe
 where
     I: Iterator<Item = &'a str>,
 {
+    find_table_value_with_label(table_text_iter, |label| label == "Merchant")
+        .ok_or_else(|| super::Error("failed to find merchant in html body".to_string()))
+}
+
+fn find_date_from_table_text<'a, I>(table_text_iter: I) -> Result<NaiveDate, super::Error>
+where
+    I: Iterator<Item = &'a str>,
+{
+    let date_text = find_table_value_with_label(table_text_iter, |label| label == "Date")
+        .ok_or_else(|| super::Error("failed to find date in html body".to_string()))?;
+
+    NaiveDate::parse_from_str(dbg!(date_text), "%m/%d/%Y")
+        .map_err(|err| super::Error(format!("failed to parse date from html body: {:?}", err)))
+}
+
+fn find_table_value_with_label<'a, I, F>(table_text_iter: I, mut find_func: F) -> Option<&'a str>
+where
+    I: Iterator<Item = &'a str>,
+    F: FnMut(&'a str) -> bool,
+{
     // The Citi emails have two parallel tables, with a heading on the left side and a value on the right.
     // In our list, this ends up as something like [..., "Merchant", "The Store", ...]
     // So we iterate in pairs until we find what we want.
-    let maybe_merchant = table_text_iter
+    table_text_iter
         .tuples()
-        .find(|&(label, _)| label == "Merchant")
-        .map(|(_, value)| value.trim());
-
-    maybe_merchant.ok_or_else(|| super::Error("failed to find merchant in html body".to_string()))
+        .find(|&(label, _)| find_func(label))
+        .map(|(_, value)| value.trim())
 }
 
 fn find_amount_from_table_text<'a, I>(mut table_text_iter: I) -> Result<&'a str, super::Error>
@@ -103,7 +123,8 @@ mod tests {
         assert_eq!(
             Transaction {
                 amount: "$3.28".to_string(),
-                payee: "STOP & SHOP".to_string()
+                payee: "STOP & SHOP".to_string(),
+                date: NaiveDate::from_ymd(2022, 9, 13),
             },
             transaction
         );

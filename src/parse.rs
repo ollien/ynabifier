@@ -1,5 +1,6 @@
 //! Provides utilities to parse emails for transactions.
 
+pub use chrono::naive::NaiveDate;
 pub use citi::EmailParser as CitiEmailParser;
 pub use td::EmailParser as TDEmailParser;
 
@@ -19,6 +20,7 @@ pub struct Error(String);
 pub struct Transaction {
     payee: String,
     amount: String,
+    date: NaiveDate,
 }
 
 /// A `TransactionEmailParser` will parse a given email for transaction details
@@ -40,6 +42,11 @@ impl Transaction {
     #[must_use]
     pub fn amount(&self) -> &str {
         &self.amount
+    }
+
+    #[must_use]
+    pub fn date(&self) -> &NaiveDate {
+        &self.date
     }
 }
 
