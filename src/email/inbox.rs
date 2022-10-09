@@ -120,13 +120,13 @@ impl<C: Cancel> Drop for SequenceNumberStream<C> {
         if let Some(stop_flag) = self.stop_flag.upgrade() {
             stop_flag.store(true, Ordering::Release);
         } else {
-            dbg!("stop_flag was no longer present on Drop of SequenceNumberStream");
+            debug!("stop_flag was no longer present on Drop of SequenceNumberStream");
         }
 
         if let Some(cancel) = std::mem::take(&mut self.task_cancel) {
             cancel.cancel();
         } else {
-            dbg!("task_cancel was nil on Drop of SequenceNumberStream");
+            debug!("task_cancel was nil on Drop of SequenceNumberStream");
         }
     }
 }
