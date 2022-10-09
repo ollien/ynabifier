@@ -3,7 +3,7 @@ extern crate log;
 
 use futures::{stream::StreamExt, Future};
 use log::LevelFilter;
-use std::{fs::File, sync::Arc};
+use std::{fs::File, process, sync::Arc};
 use tokio::runtime::Runtime;
 use ynabifier::parse::Transaction;
 use ynabifier::{
@@ -14,39 +14,28 @@ use ynabifier::{
 };
 
 fn main() {
-    let config_file = File::open("config.yml").expect("failed to open config file");
-    let config =
-        serde_yaml::from_reader::<_, Config>(config_file).expect("failed to parse config file");
+    let config_res = load_config("config.yml");
+    if let Err(err) = config_res {
+        eprintln!("Failed to load configuration: {}", err);
+        process::exit(1);
+    }
 
-    setup_logger(config.log_level()).expect("failed to seutp logger");
+    let config = config_res.unwrap();
+    if let Err(err) = setup_logger(config.log_level()) {
+        eprintln!("Failed to setup logger: {}", err);
+        process::exit(1);
+    }
 
-    let runtime = Runtime::new().expect("failed to create runtime");
-    runtime.block_on(async move {
-        let ynab_client = YNABClient::new(config.ynab().personal_access_token().to_string());
-        let mut stream =
-            ynabifier::stream_new_messages(Arc::new(TokioSpawner), config.imap().clone())
-                .await
-                .expect("failed to setup stream");
+    if let Err(err) = listen_for_transactions(&config) {
+        error!("Failed to listen for transaction emails: {}", err);
+        process::exit(2);
+    }
+}
 
-        let accounts = config.ynab().accounts();
-        while let Some(msg) = stream.next().await {
-            if let Some((account, transaction)) = try_parse_email(accounts.iter(), &msg) {
-                info!(
-                    "Parsed transaction for {} to {} with parser {}",
-                    transaction.amount(),
-                    transaction.payee(),
-                    account.parser_name(),
-                );
-                submit_transaction(
-                    &ynab_client,
-                    &transaction,
-                    config.ynab().budeget_id(),
-                    account.id(),
-                )
-                .await;
-            }
-        }
-    });
+fn load_config(filename: &str) -> Result<Config, anyhow::Error> {
+    let config_file = File::open(filename)?;
+    let config = serde_yaml::from_reader(config_file)?;
+    Ok(config)
 }
 
 fn setup_logger(log_level: LevelFilter) -> Result<(), fern::InitError> {
@@ -66,6 +55,36 @@ fn setup_logger(log_level: LevelFilter) -> Result<(), fern::InitError> {
         .apply()?;
 
     Ok(())
+}
+
+fn listen_for_transactions(config: &Config) -> Result<(), anyhow::Error> {
+    let runtime = Runtime::new()?;
+    runtime.block_on(async move {
+        let ynab_client = YNABClient::new(config.ynab().personal_access_token().to_string());
+        let mut stream =
+            ynabifier::stream_new_messages(Arc::new(TokioSpawner), config.imap().clone()).await?;
+
+        let accounts = config.ynab().accounts();
+        while let Some(msg) = stream.next().await {
+            if let Some((account, transaction)) = try_parse_email(accounts.iter(), &msg) {
+                info!(
+                    "Parsed transaction for {} to {} with parser {}",
+                    transaction.amount(),
+                    transaction.payee(),
+                    account.parser_name(),
+                );
+                submit_transaction(
+                    &ynab_client,
+                    &transaction,
+                    config.ynab().budeget_id(),
+                    account.id(),
+                )
+                .await;
+            }
+        }
+
+        Ok(())
+    })
 }
 
 fn try_parse_email<'a, I>(ynab_accounts: I, msg: &Message) -> Option<(&'a YNABAccount, Transaction)>

@@ -190,9 +190,15 @@ where
             debug!("idling");
             let sequence_number = Self::idle_for_email(idle_handle).await?;
             debug!("got email");
-            // TODO: handle these failures
-            sender.send(sequence_number).await.expect("failed to send");
-            debug!("sent");
+            let send_res = sender.send(sequence_number).await;
+            if let Err(err) = send_res {
+                error!(
+                    "Successfully fetched, but failed to dispatch email with sequence number {}: {}",
+                    sequence_number, err
+                );
+            } else {
+                debug!("sent");
+            }
         }
         debug!("done");
 

@@ -24,6 +24,7 @@ chrono = "0.4.22"
 regex = "1.6"
 reqwest = { version = "0.11.12", features = ["json"] }
 url = "2.2"
+anyhow = "1.0"
 
 # For annoying reasons, we must pin exactly the same versions as async-imap if we want to use
 # their types.
