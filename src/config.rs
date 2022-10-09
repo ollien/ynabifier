@@ -135,6 +135,14 @@ impl YNABAccount {
             Parser::TD => Box::new(TDEmailParser::new()),
         }
     }
+
+    #[must_use]
+    pub fn parser_name(&self) -> &str {
+        match self.parser {
+            Parser::Citi => "Citi",
+            Parser::TD => "TD",
+        }
+    }
 }
 
 mod defaults {

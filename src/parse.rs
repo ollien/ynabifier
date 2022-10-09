@@ -34,6 +34,16 @@ pub trait TransactionEmailParser {
 }
 
 impl Transaction {
+    /// Make a new transaction for the `amount` (formatted as $dollars.cents) to the `payee` on `date`.
+    #[must_use]
+    pub fn new(payee: String, amount: String, date: NaiveDate) -> Self {
+        Self {
+            payee,
+            amount,
+            date,
+        }
+    }
+
     #[must_use]
     pub fn payee(&self) -> &str {
         &self.payee

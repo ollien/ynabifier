@@ -9,7 +9,6 @@ use async_native_tls::TlsStream;
 use async_std::net::TcpStream;
 use thiserror::Error;
 
-pub use config::{Config, IMAP as IMAPConfig};
 pub use email::inbox::WatchError;
 pub use email::Message;
 
@@ -22,12 +21,13 @@ use task::{Spawn, SpawnError};
 
 const CHANNEL_SIZE: usize = 16;
 
-mod config;
+pub mod config;
 mod email;
 pub mod parse;
 pub mod task;
 #[cfg(test)]
 mod testutil;
+pub mod ynab;
 
 type IMAPTransportStream = TlsStream<TcpStream>;
 type IMAPClient = async_imap::Client<IMAPTransportStream>;
@@ -59,7 +59,7 @@ impl From<email::StreamSetupError> for StreamSetupError {
 /// for more details.
 pub async fn stream_new_messages<S>(
     spawner: Arc<S>,
-    imap_config: IMAPConfig,
+    imap_config: config::IMAP,
 ) -> Result<impl Stream<Item = Message> + Send, StreamSetupError>
 where
     S: Spawn + Send + Sync + Unpin + 'static,

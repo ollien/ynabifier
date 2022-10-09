@@ -5,12 +5,12 @@ use futures::{stream::StreamExt, Future};
 use log::LevelFilter;
 use std::{fs::File, sync::Arc};
 use tokio::runtime::Runtime;
-use ynabifier::parse::{Transaction, TransactionEmailParser};
-use ynabifier::Message;
+use ynabifier::parse::Transaction;
 use ynabifier::{
-    parse::{CitiEmailParser, TDEmailParser},
+    config::{Config, YNABAccount},
     task::{Cancel, Spawn, SpawnError},
-    Config,
+    ynab::Client as YNABClient,
+    Message,
 };
 
 fn main() {
@@ -21,29 +21,29 @@ fn main() {
     setup_logger(config.log_level()).expect("failed to seutp logger");
 
     let runtime = Runtime::new().expect("failed to create runtime");
-    let parsers = vec![
-        (
-            "citi",
-            Box::new(CitiEmailParser) as Box<dyn TransactionEmailParser>,
-        ),
-        (
-            "td",
-            Box::new(TDEmailParser) as Box<dyn TransactionEmailParser>,
-        ),
-    ];
-
     runtime.block_on(async move {
+        let ynab_client = YNABClient::new(config.ynab().personal_access_token().to_string());
         let mut stream =
             ynabifier::stream_new_messages(Arc::new(TokioSpawner), config.imap().clone())
                 .await
                 .expect("failed to setup stream");
+
+        let accounts = config.ynab().accounts();
         while let Some(msg) = stream.next().await {
-            if let Some(transaction) = try_parse_email(parsers.iter(), &msg) {
+            if let Some((account, transaction)) = try_parse_email(accounts.iter(), &msg) {
                 info!(
-                    "got transaction from {} for {}",
+                    "Parsed transaction for {} to {} with parser {}",
+                    transaction.amount(),
                     transaction.payee(),
-                    transaction.amount()
+                    account.parser_name(),
+                );
+                submit_transaction(
+                    &ynab_client,
+                    &transaction,
+                    config.ynab().budeget_id(),
+                    account.id(),
                 )
+                .await;
             }
         }
     });
@@ -68,21 +68,36 @@ fn setup_logger(log_level: LevelFilter) -> Result<(), fern::InitError> {
     Ok(())
 }
 
-fn try_parse_email<'a, I>(parser_iter: I, msg: &Message) -> Option<Transaction>
+fn try_parse_email<'a, I>(ynab_accounts: I, msg: &Message) -> Option<(&'a YNABAccount, Transaction)>
 where
-    I: Iterator<Item = &'a (&'a str, Box<dyn TransactionEmailParser>)>,
+    I: Iterator<Item = &'a YNABAccount>,
 {
-    for (parser_name, parser) in parser_iter {
-        match parser.parse_transaction_email(msg) {
-            Ok(transaction) => return Some(transaction),
+    for account in ynab_accounts {
+        match account.parser().parse_transaction_email(msg) {
+            Ok(transaction) => return Some((account, transaction)),
             Err(err) => debug!(
                 "failed to parse message with parser '{}': {:?}",
-                parser_name, err
+                account.parser_name(),
+                err
             ),
         }
     }
 
     None
+}
+
+async fn submit_transaction(
+    client: &YNABClient,
+    transaction: &Transaction,
+    budget_id: &str,
+    account_id: &str,
+) {
+    if let Err(err) = client
+        .submit_transaction(transaction, budget_id, account_id)
+        .await
+    {
+        error!("Failed to submit transaction: {}", err);
+    }
 }
 
 #[derive(Clone)]

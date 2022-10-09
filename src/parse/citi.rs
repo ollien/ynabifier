@@ -53,11 +53,7 @@ impl TransactionEmailParser for EmailParser {
         let payee = find_payee_from_table_text(td_text_iter.clone())?;
         let date = find_date_from_table_text(td_text_iter)?;
 
-        let trans = Transaction {
-            amount: amount.to_string(),
-            payee: payee.to_string(),
-            date,
-        };
+        let trans = Transaction::new(payee.to_string(), amount.to_string(), date);
 
         Ok(trans)
     }
