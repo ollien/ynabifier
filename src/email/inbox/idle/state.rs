@@ -1,6 +1,6 @@
 //! The state module implements structures that can abstractly handle the state needed for the IDLE IMAP operation.
 
-use super::traits::{Idler, IntoIdler};
+use super::{Idler, IntoIdler};
 use async_imap::error::Result as IMAPResult;
 
 pub struct IdlerCell<I> {
