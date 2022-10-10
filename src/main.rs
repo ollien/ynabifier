@@ -1,8 +1,11 @@
 #[macro_use]
 extern crate log;
 
+use futures::{select, FutureExt};
 use futures::{stream::StreamExt, Future};
 use log::LevelFilter;
+
+use std::time::Duration;
 use std::{fs::File, process, sync::Arc};
 use tokio::runtime::Runtime;
 use ynabifier::parse::Transaction;
@@ -62,25 +65,47 @@ fn listen_for_transactions(config: &Config) -> Result<(), anyhow::Error> {
     runtime.block_on(async move {
         let ynab_client = YNABClient::new(config.ynab().personal_access_token().to_string());
         let mut stream =
-            ynabifier::stream_new_messages(Arc::new(TokioSpawner), config.imap().clone()).await?;
+            ynabifier::stream_new_messages(Arc::new(TokioSpawner), config.imap().clone())
+                .await?
+                .fuse();
 
         let accounts = config.ynab().accounts();
-        while let Some(msg) = stream.next().await {
-            if let Some((account, transaction)) = try_parse_email(accounts.iter(), &msg) {
-                info!(
-                    "Parsed transaction for {} to {} with parser {}",
-                    transaction.amount(),
-                    transaction.payee(),
-                    account.parser_name(),
-                );
-                submit_transaction(
-                    &ynab_client,
-                    &transaction,
-                    config.ynab().budeget_id(),
-                    account.id(),
-                )
-                .await;
+        loop {
+            select! {
+                _ = tokio::signal::ctrl_c().fuse() => break,
+                maybe_msg = stream.next() => {
+                    if maybe_msg.is_none() {
+                        break;
+                    }
+                    let msg = maybe_msg.unwrap();
+                    if let Some((account, transaction)) = try_parse_email(accounts.iter(), &msg) {
+                        info!(
+                            "Parsed transaction for {} to {} with parser {}",
+                            transaction.amount(),
+                            transaction.payee(),
+                            account.parser_name(),
+                        );
+                        submit_transaction(
+                            &ynab_client,
+                            &transaction,
+                            config.ynab().budeget_id(),
+                            account.id(),
+                        )
+                        .await;
+                    }
+                }
             }
+        }
+
+        drop(stream);
+        debug!("waiting");
+        // Wait for the user to either ctrl-c a second time to forcibly shut off the app, or wait a "reasonable"
+        // amount of time for cleanup
+        select! {
+            _ = tokio::signal::ctrl_c().fuse() => (),
+            // TODO: just a plain sleep is stupid. We should find some way to thread through a true "cleaned up"
+            // signal
+            _ = tokio::time::sleep(Duration::from_secs(10)).fuse() => (),
         }
 
         Ok(())

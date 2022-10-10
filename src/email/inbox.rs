@@ -1,9 +1,9 @@
 //! The inbox module holds implementations to allow for the monitoring of a real inbox
 
-use self::idle::{SessionCell, SessionState};
+use self::idle::{Idler, IdlerCell, SessionCell, SessionState};
 use super::{login::SessionGenerator, SequenceNumber};
 use crate::{
-    task::{Cancel, Spawn, SpawnError},
+    task::{Spawn, SpawnError},
     IMAPSession, IMAPTransportStream,
 };
 use async_imap::{
@@ -11,19 +11,14 @@ use async_imap::{
     extensions::idle::Handle,
     imap_proto::{MailboxDatum, Response},
 };
-use futures::{
-    channel::mpsc::{self, Receiver, Sender},
-    SinkExt, Stream,
-};
+use futures::{channel::mpsc, future::Shared, select, FutureExt, SinkExt, Stream};
 use std::{
     fmt::Debug,
     pin::Pin,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Weak,
-    },
+    sync::Arc,
     task::{Context, Poll},
 };
+use stop_token::{StopSource, StopToken};
 use thiserror::Error;
 
 mod idle;
@@ -49,7 +44,6 @@ where
     G: SessionGenerator + Sync + Send + 'static,
 {
     let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
-    // TODO: this session never does a log-out. We need some kind of async RAII for that
 
     let mut session = session_generator
         .new_session()
@@ -61,50 +55,41 @@ where
         .await
         .map_err(WatchError::IMAPSetupError)?;
 
-    let stop_flag = Arc::new(AtomicBool::new(false));
-    let weak_stop_flag = Arc::downgrade(&stop_flag);
+    let stop_src = StopSource::new();
+    let stop_token = stop_src.token();
     let watch_future = async move {
-        let task = WatchTask {
-            session_generator,
-            stopped: stop_flag,
-        };
-
         let mut tx = tx;
-        task.watch_for_new_emails(session, &mut tx).await;
+        watch_for_new_emails(session, session_generator, stop_token, &mut tx).await;
     };
 
-    let canceler = spawner
+    // NOTE: We deliberately *DO NOT* want a canceler here. We want the ability to clean up our sessions, so we use
+    // a StopToken. If we must stop, the executor will kill us from the top level.
+    spawner
         .spawn(watch_future)
         .map_err(WatchError::SpawnError)?;
 
-    let stream = SequenceNumberStream::new(rx, weak_stop_flag, canceler);
+    let stream = SequenceNumberStream::new(rx, stop_src);
 
     Ok(stream)
 }
 
-struct SequenceNumberStream<C: Cancel> {
-    output_stream: Receiver<SequenceNumber>,
-    stop_flag: Weak<AtomicBool>,
-    // NOTE: This will always be Some, except in truly exceptional cases.
+struct SequenceNumberStream {
+    output_stream: mpsc::Receiver<SequenceNumber>,
     // It is only Option so that Drop can be implemented safely.
-    task_cancel: Option<C>,
+    // Exists so that on drop, the watch task will stop.
+    _stop_src: Option<StopSource>,
 }
 
-impl<C: Cancel> SequenceNumberStream<C> {
-    pub fn new(
-        output_stream: Receiver<SequenceNumber>,
-        stop_flag: Weak<AtomicBool>,
-        task_cancel: C,
-    ) -> Self {
+impl SequenceNumberStream {
+    pub fn new(output_stream: mpsc::Receiver<SequenceNumber>, stop_src: StopSource) -> Self {
         Self {
             output_stream,
-            stop_flag,
-            task_cancel: Some(task_cancel),
+            _stop_src: Some(stop_src),
         }
     }
 }
 
-impl<C: Cancel + Unpin> Stream for SequenceNumberStream<C> {
+impl Stream for SequenceNumberStream {
     type Item = SequenceNumber;
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let output_stream = &mut self.get_mut().output_stream;
@@ -113,164 +98,180 @@ impl<C: Cancel + Unpin> Stream for SequenceNumberStream<C> {
     }
 }
 
-impl<C: Cancel> Drop for SequenceNumberStream<C> {
-    fn drop(&mut self) {
-        info!("Inbox stream is shutting down");
-
-        if let Some(stop_flag) = self.stop_flag.upgrade() {
-            stop_flag.store(true, Ordering::Release);
-        } else {
-            debug!("stop_flag was no longer present on Drop of SequenceNumberStream");
-        }
-
-        if let Some(cancel) = std::mem::take(&mut self.task_cancel) {
-            cancel.cancel();
-        } else {
-            debug!("task_cancel was nil on Drop of SequenceNumberStream");
-        }
-    }
-}
-
-/// Holds any data that watch tasks may be accessed during a `Watcher`'s stream.
-struct WatchTask<G> {
+async fn watch_for_new_emails<G: SessionGenerator>(
+    session: IMAPSession,
     session_generator: Arc<G>,
-    stopped: Arc<AtomicBool>,
+    stop: StopToken,
+    sender: &mut mpsc::Sender<SequenceNumber>,
+) {
+    // Should always be Some, we just need a container we can move out of.
+    let mut current_session = Some(session);
+    let shared_stop = stop.shared();
+    loop {
+        // This is always a bug. The only reason that we have to use an optional for current_session
+        // is because it is moved out of every loop.
+        let session = current_session
+            .take()
+            .expect("Lost track of the current session, can't continue");
+
+        let session_res =
+            watch_for_new_emails_until_fail(session, sender, shared_stop.clone()).await;
+
+        match session_res {
+            Ok(session) => {
+                current_session = Some(session);
+                // the StopToken will have a value in the future once a stop has ocurred, so we can just stop.
+                if shared_stop.peek().is_some() {
+                    break;
+                }
+            }
+            Err(err) => {
+                error!("failed to watch for new emails: {}", err);
+                let maybe_session =
+                    get_session_with_retry(session_generator.as_ref(), shared_stop.clone()).await;
+                match maybe_session {
+                    Some(new_session) => current_session = Some(new_session),
+                    // `get_session_with_retry` will only return None if the current watcher is stopped
+                    None => break,
+                }
+            }
+        }
+    }
+
+    if let Some(mut session) = current_session {
+        debug!("Logging session out before shutting down");
+        let logout_res = session.logout().await;
+        if let Err(err) = logout_res {
+            error!("Failed to log session out: {}", err);
+        }
+    }
+
+    debug!("Watch finished...");
 }
 
-impl<G> WatchTask<G>
-where
-    G: SessionGenerator,
-{
-    async fn watch_for_new_emails(
-        &self,
-        session: IMAPSession,
-        sender: &mut Sender<SequenceNumber>,
-    ) {
-        // TODO: should this return errors beyond logging?
-        let mut current_session = session;
-        while !self.stopped.load(Ordering::Acquire) {
-            let sink_res = self
-                .watch_for_new_emails_until_fail(current_session, sender)
-                .await;
+/// Watch for the arrival of a single email. While the `Watcher` is watching, the caller must relinquish ownership
+/// of the `Session`, but it will be returned to it upon succesful completion
+async fn watch_for_new_emails_until_fail(
+    session: IMAPSession,
+    sender: &mut mpsc::Sender<SequenceNumber>,
+    stop: Shared<StopToken>,
+) -> Result<IMAPSession, IMAPError> {
+    let mut session_cell = SessionCell::new(session);
 
-            match sink_res {
-                Ok(next_session) => {
-                    current_session = next_session;
-                    continue;
+    loop {
+        let idle_cell = session_cell.get_idler_cell();
+        let maybe_idle_handle = prepare_idler_if_unstopped(idle_cell, stop.clone()).await?;
+        if maybe_idle_handle.is_none() {
+            break;
+        }
+
+        let idle_handle = maybe_idle_handle.unwrap();
+        debug!("Idling for new emails...");
+        select! {
+            _ = stop.clone().fuse()  => break,
+            sequence_number_res = idle_for_email(idle_handle).fuse() => {
+                let sequence_number = sequence_number_res?;
+                debug!("Idle received email with sequence number {}, sending to stream...", sequence_number);
+                let send_res = sender.send(sequence_number).await;
+                if let Err(err) = send_res {
+                    error!(
+                        "Successfully fetched, but failed to dispatch email with sequence number {}: {}",
+                        sequence_number, err
+                    );
+                } else {
+                    debug!("Message sent");
                 }
-                Err(err) => {
-                    error!("failed to watch for new emails: {}", err);
-                    let maybe_session = self.get_session_with_retry().await;
-                    match maybe_session {
-                        Some(new_session) => current_session = new_session,
-                        // `get_session_with_retry` will only return None if the current watcher is stopped
-                        None => break,
+            }
+        }
+    }
+
+    debug!("Done watching, reclaiming session...");
+
+    match session_cell.into_state() {
+        // If we've only initialized the cell, we don't need to actually do anything...
+        SessionState::Initialized(session) => Ok(session),
+        // If we've begun idling however, then we need to finish up and return the reclaimed session
+        SessionState::IdleReady(idle_cell) => {
+            let idle_handle = idle_cell.into_inner();
+            debug!("marking done...");
+            idle_handle.done().await
+        }
+    }
+}
+
+async fn prepare_idler_if_unstopped<I: Idler + Unpin>(
+    idler_cell: &mut IdlerCell<I>,
+    stop: Shared<StopToken>,
+) -> IMAPResult<Option<&mut I>> {
+    select! {
+        // TODO: an Option is a bit semantically weird but it works for this purpose...
+        _ = stop.fuse() => Ok(None),
+        idle_handle_res = idler_cell.prepare().fuse() => idle_handle_res.map(Some)
+    }
+}
+
+async fn idle_for_email(
+    idle_handle: &mut Handle<IMAPTransportStream>,
+) -> IMAPResult<SequenceNumber> {
+    loop {
+        let idle_res = idle::wait_for_data(idle_handle).await;
+        match idle_res {
+            Ok(data) => {
+                let response = data.response();
+                let maybe_sequence_number = get_sequence_number_from_response(response);
+
+                match maybe_sequence_number {
+                    Some(sequence_number) => return Ok(sequence_number),
+                    None => {
+                        debug!("re-issuing IDLE after getting non-EXISTS response from IDLE command: {:?}", response);
                     }
                 }
             }
-        }
-
-        info!("stopped");
-    }
-
-    /// Watch for the arrival of a single email. While the `Watcher` is watching, the caller must relinquish ownership
-    /// of the `Session`, but it will be returned to it upon succesful completion
-    async fn watch_for_new_emails_until_fail(
-        &self,
-        session: IMAPSession,
-        sender: &mut Sender<SequenceNumber>,
-    ) -> Result<IMAPSession, IMAPError> {
-        let mut session_cell = SessionCell::new(session);
-
-        info!("beginning watch");
-        while !self.stopped.load(Ordering::Acquire) {
-            let idle_cell = session_cell.get_idler_cell();
-            let idle_handle = idle_cell.prepare().await?;
-
-            debug!("idling");
-            let sequence_number = Self::idle_for_email(idle_handle).await?;
-            debug!("got email");
-            let send_res = sender.send(sequence_number).await;
-            if let Err(err) = send_res {
-                error!(
-                    "Successfully fetched, but failed to dispatch email with sequence number {}: {}",
-                    sequence_number, err
-                );
-            } else {
-                debug!("sent");
-            }
-        }
-        debug!("done");
-
-        match session_cell.into_state() {
-            // If we've only initialized the cell, we don't need to actually do anything...
-            SessionState::Initialized(session) => Ok(session),
-            // If we've begun idling however, then we need to finish up and return the reclaimed session
-            SessionState::IdleReady(idle_cell) => {
-                let idle_handle = idle_cell.into_inner();
-                let reclaimed_session = idle_handle.done().await?;
-                Ok(reclaimed_session)
+            Err(idle::Error::AsyncIMAPError(err)) => return Err(err),
+            Err(idle::Error::Timeout) => {
+                debug!("re-issuing IDLE after timeout");
             }
         }
     }
+}
 
-    async fn idle_for_email(
-        idle_handle: &mut Handle<IMAPTransportStream>,
-    ) -> IMAPResult<SequenceNumber> {
-        loop {
-            let idle_res = idle::wait_for_data(idle_handle).await;
-            match idle_res {
-                Ok(data) => {
-                    let response = data.response();
-                    let maybe_sequence_number =
-                        Self::get_sequence_number_from_response(response).await;
+fn get_sequence_number_from_response(response: &Response) -> Option<SequenceNumber> {
+    match response {
+        Response::MailboxData(MailboxDatum::Exists(seq)) => Some(SequenceNumber(*seq)),
+        _ => None,
+    }
+}
 
-                    match maybe_sequence_number {
-                        Some(sequence_number) => return Ok(sequence_number),
-                        None => {
-                            debug!("re-issuing IDLE after getting non-EXISTS response from IDLE command: {:?}", response);
-                        }
+/// continues to try and get a new session. If the Watcher is currently stopped, returns None.
+async fn get_session_with_retry<G: SessionGenerator>(
+    session_generator: &G,
+    stop: Shared<StopToken>,
+) -> Option<IMAPSession> {
+    let mut attempts = 1;
+    let mut fused_stop = stop.fuse();
+    loop {
+        info!("generating a new session...");
+        let session_future = get_session(session_generator);
+        select! {
+            _ = fused_stop => break,
+            new_session_res = session_future.fuse() => {
+                match new_session_res {
+                    Ok(new_session) => return Some(new_session),
+                    Err(err) => {
+                        error!("failed to get new session on attempt {}: {}", attempts, err);
+                        attempts += 1;
                     }
                 }
-                Err(idle::Error::AsyncIMAPError(err)) => return Err(err),
-                Err(idle::Error::Timeout) => {
-                    debug!("re-issuing IDLE after timeout");
-                }
-            }
+            },
         }
     }
 
-    async fn get_sequence_number_from_response<'b>(
-        response: &Response<'b>,
-    ) -> Option<SequenceNumber> {
-        match response {
-            Response::MailboxData(MailboxDatum::Exists(seq)) => Some(SequenceNumber(*seq)),
-            _ => None,
-        }
-    }
+    None
+}
 
-    /// continues to try and get a new session. If the Watcher is currently stopped, returns None.
-    async fn get_session_with_retry(&self) -> Option<IMAPSession> {
-        let mut attempts = 1;
-        while !self.stopped.load(Ordering::Acquire) {
-            info!("generating a new session...");
-            let new_session_res = self.get_session().await;
-            match new_session_res {
-                Ok(new_session) => return Some(new_session),
-                Err(err) => {
-                    error!("failed to get new session on attempt {}: {}", attempts, err);
-                    attempts += 1;
-                }
-            }
-        }
+async fn get_session<G: SessionGenerator>(session_generator: &G) -> IMAPResult<IMAPSession> {
+    let mut session = session_generator.new_session().await?;
+    session.examine("INBOX").await?;
 
-        None
-    }
-
-    async fn get_session(&self) -> IMAPResult<IMAPSession> {
-        let mut session = self.session_generator.new_session().await?;
-        session.examine("INBOX").await?;
-
-        Ok(session)
-    }
+    Ok(session)
 }
