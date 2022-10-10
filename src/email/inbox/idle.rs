@@ -37,13 +37,13 @@ impl From<IMAPError> for Error {
 }
 
 /// `SessionState` holds the state of an idling session, and whether or not we have access to the current session or
-/// the idle handle.
+/// the idle handle. This maps one to one with `state::SessionState`, except it is not generic.
 pub enum SessionState {
     Initialized(IMAPSession),
     IdleReady(IdlerCell<Handle<IMAPTransportStream>>),
 }
 
-/// Holds a `SessionState` and allows progression between its various states.
+/// Holds a session and allows access a state-tracked way to convert it into an Idler.
 pub struct SessionCell {
     inner: state::SessionCell<IMAPSession, Handle<IMAPTransportStream>>,
 }
