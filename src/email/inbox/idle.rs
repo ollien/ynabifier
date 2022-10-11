@@ -46,7 +46,7 @@ pub trait Idler {
 pub enum Error {
     /// Indicates that an IDLE command timed out, and should be re-issued to continue
     #[error("idle timed out")]
-    Timeout,
+    NeedReconnect,
     #[error("{0}")]
     AsyncIMAPError(IMAPError),
 }
@@ -109,8 +109,9 @@ pub async fn wait_for_data(idle_handle: &mut Handle<IMAPTransportStream>) -> Res
     let (idle_response_future, _stop) = idle_handle.wait_with_timeout(WAIT_TIMEOUT);
     let idle_response = idle_response_future.await?;
     match idle_response {
-        IdleResponse::ManualInterrupt => panic!("we don't interrupt manually"),
-        IdleResponse::Timeout => Err(Error::Timeout),
+        // ManualInterrupt happens whenever the stream is broken, so we should treat it the
+        // same as a timeout.
+        IdleResponse::Timeout | IdleResponse::ManualInterrupt => Err(Error::NeedReconnect),
         IdleResponse::NewData(_) => Ok(Data::new(idle_response)),
     }
 }

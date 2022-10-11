@@ -228,8 +228,8 @@ async fn idle_for_email(
                 }
             }
             Err(idle::Error::AsyncIMAPError(err)) => return Err(err),
-            Err(idle::Error::Timeout) => {
-                debug!("re-issuing IDLE after timeout");
+            Err(idle::Error::NeedReconnect) => {
+                debug!("re-issuing IDLE after disconnect");
             }
         }
     }
