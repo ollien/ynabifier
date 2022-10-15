@@ -1,9 +1,12 @@
 #[macro_use]
 extern crate log;
 
+use async_trait::async_trait;
 use futures::{select, FutureExt};
 use futures::{stream::StreamExt, Future};
 use log::LevelFilter;
+use tokio::task::{JoinError, JoinHandle};
+use ynabifier::task::{Handle, Join};
 
 use std::time::Duration;
 use std::{fs::File, process, sync::Arc};
@@ -146,32 +149,43 @@ async fn submit_transaction(
 
 #[derive(Clone)]
 struct TokioSpawner;
+struct TokioJoinHandle(JoinHandle<()>);
 
 impl Spawn for TokioSpawner {
-    type Cancel = CancelFnOnce;
+    type Handle = TokioJoinHandle;
 
-    fn spawn<F: Future + Send + 'static>(&self, future: F) -> Result<Self::Cancel, SpawnError>
+    fn spawn<F: Future + Send + 'static>(&self, future: F) -> Result<Self::Handle, SpawnError>
     where
         <F as Future>::Output: Send,
     {
-        let handle = tokio::spawn(future);
-        let canceler = CancelFnOnce {
-            cancel_func: Box::new(move || handle.abort()),
-        };
-        Ok(canceler)
+        let handle = tokio::spawn(async move {
+            future.await;
+        });
+
+        Ok(TokioJoinHandle(handle))
     }
 }
 
-struct CancelFnOnce {
-    cancel_func: Box<dyn FnOnce() + Send + Sync>,
-}
-
-impl Cancel for CancelFnOnce {
+impl Cancel for TokioJoinHandle {
     fn cancel(self) {
-        (self.cancel_func)()
+        self.0.abort();
     }
 
     fn cancel_boxed(self: Box<Self>) {
-        self.cancel()
+        self.cancel();
     }
 }
+
+#[async_trait]
+impl Join for TokioJoinHandle {
+    type Error = JoinError;
+
+    async fn join(self) -> Result<(), Self::Error> {
+        match self.0.await {
+            Err(err) => Err(err),
+            Ok(_) => Ok(()),
+        }
+    }
+}
+
+impl Handle for TokioJoinHandle {}

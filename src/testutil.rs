@@ -1,38 +1,49 @@
 //! Provides items that may be useful for testing
 #![cfg(test)]
 
+use async_trait::async_trait;
 use futures::Future;
+use tokio::task::{JoinError, JoinHandle};
 
-use crate::task::{Cancel, Spawn, SpawnError};
+use crate::task::{Cancel, Handle, Join, Spawn, SpawnError};
 
 #[derive(Clone)]
 pub struct TokioSpawner;
 impl Spawn for TokioSpawner {
-    type Cancel = CancelFnOnce;
+    type Handle = JoinHandle<()>;
 
-    fn spawn<F: Future + Send + 'static>(&self, future: F) -> Result<Self::Cancel, SpawnError>
+    fn spawn<F: Future + Send + 'static>(&self, future: F) -> Result<Self::Handle, SpawnError>
     where
         <F as Future>::Output: Send,
     {
-        let handle = tokio::spawn(future);
-        let canceler = CancelFnOnce {
-            cancel_func: Box::new(move || handle.abort()),
-        };
+        let handle = tokio::spawn(async move {
+            future.await;
+        });
 
-        Ok(canceler)
+        Ok(handle)
     }
 }
 
-pub struct CancelFnOnce {
-    cancel_func: Box<dyn FnOnce() + Send + Sync>,
-}
-
-impl Cancel for CancelFnOnce {
+impl<T> Cancel for JoinHandle<T> {
     fn cancel(self) {
-        (self.cancel_func)();
+        self.abort();
     }
 
     fn cancel_boxed(self: Box<Self>) {
         self.cancel();
     }
 }
+
+#[async_trait]
+impl<T: Send> Join for JoinHandle<T> {
+    type Error = JoinError;
+
+    async fn join(self) -> Result<(), Self::Error> {
+        match (self as JoinHandle<T>).await {
+            Err(err) => Err(err),
+            Ok(_) => Ok(()),
+        }
+    }
+}
+
+impl<T: Send> Handle for JoinHandle<T> {}

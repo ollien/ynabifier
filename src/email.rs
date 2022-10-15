@@ -136,7 +136,7 @@ where
     F: MessageFetcher + Send + Sync + 'static,
     F::Error: Sync + Send,
     S: Spawn + Send + Sync + 'static,
-    S::Cancel: 'static,
+    S::Handle: 'static,
 {
     let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
 

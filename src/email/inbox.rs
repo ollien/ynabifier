@@ -48,7 +48,7 @@ pub async fn watch_for_new_messages<S, G>(
 ) -> Result<impl Stream<Item = SequenceNumber>, WatchError>
 where
     S: Spawn + Sync,
-    S::Cancel: Unpin,
+    S::Handle: Unpin,
     G: SessionGenerator + Sync + Send + 'static,
 {
     let (tx, rx) = mpsc::channel(CHANNEL_SIZE);

@@ -2,9 +2,15 @@
 
 use std::{fmt::Debug, sync::Arc};
 
+use super::{Cancel, Spawn, SpawnError};
+use futures::{
+    channel::{
+        mpsc::{self, UnboundedReceiver, UnboundedSender},
+        oneshot,
+    },
+    Future, SinkExt, StreamExt,
+};
 use thiserror::Error;
-use super::{Spawn, SpawnError, Cancel};
-use futures::{channel::{mpsc::{self, UnboundedSender, UnboundedReceiver}, oneshot}, Future, StreamExt, SinkExt};
 
 /// `Task` represents a single unit that can be submitted to `listen_for_tasks` for running under a `Runner`.
 pub struct Task {
@@ -15,7 +21,7 @@ pub struct Task {
 #[derive(Error, Debug)]
 pub enum TaskError {
     #[error("The task accepting loop is stopped")]
-   ReceiverGone
+    ReceiverGone,
 }
 
 /// Runner is returned by [`listen_for_tasks`]. See its docstring for more details.
@@ -25,7 +31,7 @@ pub struct Runner {
 
 pub struct CancelHandle {
     task_sender: UnboundedSender<Task>,
-    cancel_signal_sender: oneshot::Sender<()>
+    cancel_signal_sender: oneshot::Sender<()>,
 }
 
 impl Task {
@@ -39,12 +45,15 @@ impl Task {
 ///
 /// # Errors
 /// Returns a [`SpawnError`] if creating the necessary background tasks failed.
-pub fn listen_for_tasks<S: Spawn + Send + Sync + 'static>(spawner: Arc<S>) -> Result<(Runner, CancelHandle), SpawnError> {
+pub fn listen_for_tasks<S: Spawn + Send + Sync + 'static>(
+    spawner: Arc<S>,
+) -> Result<(Runner, CancelHandle), SpawnError> {
     let (task_sender, task_receiver) = mpsc::unbounded();
     let (cancel_sender, cancel_receiver) = mpsc::unbounded();
     let (cancel_signal_sender, cancel_signal_receiver) = oneshot::channel();
 
-    let cancel_cancel_loop = spawner.spawn(cancel_on_signal(cancel_signal_receiver, cancel_receiver))?;
+    let cancel_cancel_loop =
+        spawner.spawn(cancel_on_signal(cancel_signal_receiver, cancel_receiver))?;
     let spawner_clone = spawner.clone();
     let spawn_res = spawner_clone.spawn(run_tasks_on_recv(spawner, task_receiver, cancel_sender));
     if let Err(err) = spawn_res {
@@ -53,8 +62,11 @@ pub fn listen_for_tasks<S: Spawn + Send + Sync + 'static>(spawner: Arc<S>) -> Re
         return Err(err);
     }
 
-    let cancel_handle = CancelHandle{task_sender: task_sender.clone(), cancel_signal_sender};
-    let runner = Runner{task_sender};
+    let cancel_handle = CancelHandle {
+        task_sender: task_sender.clone(),
+        cancel_signal_sender,
+    };
+    let runner = Runner { task_sender };
     Ok((runner, cancel_handle))
 }
 
@@ -88,14 +100,13 @@ impl Cancel for CancelHandle {
     }
 }
 
-
-async fn run_tasks_on_recv<S> (
+async fn run_tasks_on_recv<S>(
     spawner: Arc<S>,
     mut task_stream: UnboundedReceiver<Task>,
-    mut cancel_sink: UnboundedSender<Box<dyn Cancel + Send>>
+    mut cancel_sink: UnboundedSender<Box<dyn Cancel + Send>>,
 ) where
     S: Spawn + Send + Sync,
-    S::Cancel: 'static,
+    S::Handle: 'static,
 {
     while let Some(task) = task_stream.next().await {
         debug!("Spawning task '{}'...", task.name);
@@ -110,13 +121,12 @@ async fn run_tasks_on_recv<S> (
                             "Task '{}' successfully spawned, but its Cancel could not be stored. ",
                             "This may lead to a leak! : {:?}"
                         ),
-                        task.name,
-                        err
+                        task.name, err
                     );
                 }
             }
 
-            Err(err) => error!("failed to spawn task '{}': {}", task.name, err)
+            Err(err) => error!("failed to spawn task '{}': {}", task.name, err),
         }
     }
 }
@@ -125,7 +135,7 @@ async fn run_tasks_on_recv<S> (
 /// in the `cancel_stream` upon receipt.
 async fn cancel_on_signal(
     cancel_signal_receiver: oneshot::Receiver<()>,
-    mut cancel_stream: UnboundedReceiver<Box<dyn Cancel + Send>>
+    mut cancel_stream: UnboundedReceiver<Box<dyn Cancel + Send>>,
 ) {
     // If signaler has hung up, that's fine, we are just gonna die out and ignore cancellation.
     if cancel_signal_receiver.await.is_ok() {
@@ -135,20 +145,15 @@ async fn cancel_on_signal(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::testutil::TokioSpawner;
+    use futures::{channel::oneshot, future, FutureExt};
     use std::{
+        pin::Pin,
         task::{Context, Poll},
         time::Duration,
-        pin::Pin
-    };
-    use futures::{
-        FutureExt,
-        future,
-        channel::oneshot
     };
     use tokio::time;
 
@@ -162,40 +167,41 @@ mod tests {
 
     #[tokio::test]
     async fn test_submitted_tasks_are_scheduled_to_run() {
-        let (txs_from_task, rxs_from_task) = unpack_pairs((1..=5).map(|_| oneshot::channel::<()>()));
-        let (mut runner, _) = listen_for_tasks(Arc::new(TokioSpawner))
-            .expect("failed to begin listening for tasks");
+        let (txs_from_task, rxs_from_task) =
+            unpack_pairs((1..=5).map(|_| oneshot::channel::<()>()));
+        let (mut runner, _) =
+            listen_for_tasks(Arc::new(TokioSpawner)).expect("failed to begin listening for tasks");
 
         // Each task will send a message once they've been called
-        let tasks = txs_from_task
-            .into_iter()
-            .enumerate()
-            .map(|(i, tx)| {
-                Task::new(
-                    format!("Task {}", i),
-                    Box::new(async { tx.send(()).expect("failed to send result"); })
-                )
-            });
+        let tasks = txs_from_task.into_iter().enumerate().map(|(i, tx)| {
+            Task::new(
+                format!("Task {}", i),
+                Box::new(async {
+                    tx.send(()).expect("failed to send result");
+                }),
+            )
+        });
 
         for task in tasks {
             let submit_res = runner.submit_new_task(task).await;
             assert!(submit_res.is_ok());
         }
 
-
         // Wait for all messages to come back (i.e. all the tasks have been run)
         let all_rcvd = future::join_all(rxs_from_task.into_iter());
-        time::timeout(Duration::from_secs(5), all_rcvd).await
+        time::timeout(Duration::from_secs(5), all_rcvd)
+            .await
             .expect("task timed out")
-            .into_iter().for_each(|res| res.expect("receive failed"));
+            .into_iter()
+            .for_each(|res| res.expect("receive failed"));
     }
 
     struct DropHandle {
-       _tx: oneshot::Sender<()>
+        _tx: oneshot::Sender<()>,
     }
 
     struct DropWaiter {
-        rx: oneshot::Receiver<()>
+        rx: oneshot::Receiver<()>,
     }
 
     impl Future for DropWaiter {
@@ -203,20 +209,15 @@ mod tests {
         fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
             match self.rx.poll_unpin(cx) {
                 Poll::Pending => Poll::Pending,
-                Poll::Ready(Err(_)) => {
-                    Poll::Ready(())
-                }
-                Poll::Ready(res) => panic!("got a canceled result: {:?}", res)
+                Poll::Ready(Err(_)) => Poll::Ready(()),
+                Poll::Ready(res) => panic!("got a canceled result: {:?}", res),
             }
         }
     }
 
     fn drop_channel() -> (DropHandle, DropWaiter) {
         let (tx, rx) = oneshot::channel();
-        (
-            DropHandle{_tx: tx},
-            DropWaiter{rx},
-        )
+        (DropHandle { _tx: tx }, DropWaiter { rx })
     }
 
     #[tokio::test]
@@ -224,8 +225,8 @@ mod tests {
         let (txs_to_task, rxs_from_task) = unpack_pairs((1..=5).map(|_| oneshot::channel::<()>()));
         let (drop_handles, drop_waiters) = unpack_pairs((1..=5).map(|_| drop_channel()));
 
-        let (mut runner, cancel_handle) = listen_for_tasks(Arc::new(TokioSpawner))
-            .expect("failed to begin listening for tasks");
+        let (mut runner, cancel_handle) =
+            listen_for_tasks(Arc::new(TokioSpawner)).expect("failed to begin listening for tasks");
         let tasks = rxs_from_task
             .into_iter()
             .zip(drop_handles.into_iter())
@@ -239,9 +240,9 @@ mod tests {
                         let _drop_handle = drop_handle;
                         rx_from_task.await.expect("recv failed");
                         panic!("this should never be reached");
-                    })
+                    }),
                 )
-        });
+            });
 
         for task in tasks {
             let res = runner.submit_new_task(task).await;
@@ -250,51 +251,54 @@ mod tests {
 
         cancel_handle.cancel();
         let all_dropped = future::join_all(drop_waiters);
-        time::timeout(Duration::from_secs(5), all_dropped).await
+        time::timeout(Duration::from_secs(5), all_dropped)
+            .await
             .expect("waiting for drop timed out");
 
         // Once we know the handle has been dropped, we can make sure the task is dead
         // by trying to send something into it and making sure we fail to do so.
-        txs_to_task
-            .into_iter()
-            .for_each(|tx| tx.send(()).expect_err("The receiver is still alive unexpectedly"));
+        txs_to_task.into_iter().for_each(|tx| {
+            tx.send(())
+                .expect_err("The receiver is still alive unexpectedly")
+        });
     }
 
     #[tokio::test]
     async fn test_does_not_cancel_on_drop() {
         let (seed_tx, seed_rx) = oneshot::channel();
         let (response_tx, response_rx) = oneshot::channel();
-        let (mut runner, _cancel_handle) = listen_for_tasks(Arc::new(TokioSpawner))
-            .expect("failed to begin listening for tasks");
+        let (mut runner, _cancel_handle) =
+            listen_for_tasks(Arc::new(TokioSpawner)).expect("failed to begin listening for tasks");
 
         let fut = async {
-            let value = seed_rx.await
-                .expect("failed to receive value in task");
-            response_tx.send(value)
+            let value = seed_rx.await.expect("failed to receive value in task");
+            response_tx
+                .send(value)
                 .expect("failed to echo value from task");
         };
 
         let task = Task::new("task".to_string(), Box::new(fut));
-        runner.submit_new_task(task).await
+        runner
+            .submit_new_task(task)
+            .await
             .expect("failed to submit task");
 
         drop(runner);
-        seed_tx.send(100)
-            .expect("could not send message into task");
-        let rcvd_value = response_rx.await
-            .expect("failed to receive from task");
+        seed_tx.send(100).expect("could not send message into task");
+        let rcvd_value = response_rx.await.expect("failed to receive from task");
         // If the task is still running, even after dropping the runner, we should get this value back
         assert!(rcvd_value == 100);
     }
 
     #[tokio::test]
     async fn test_cannot_submit_new_tasks_after_drop() {
-        let (mut runner, cancel_handle) = listen_for_tasks(Arc::new(TokioSpawner))
-            .expect("failed to begin listening for tasks");
+        let (mut runner, cancel_handle) =
+            listen_for_tasks(Arc::new(TokioSpawner)).expect("failed to begin listening for tasks");
 
         cancel_handle.cancel();
         let task = Task::new("nil task".to_string(), Box::new(async {}));
-        runner.submit_new_task(task)
+        runner
+            .submit_new_task(task)
             .await
             .expect_err("should not have been able to submit a task");
     }

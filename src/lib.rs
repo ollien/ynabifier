@@ -63,7 +63,7 @@ pub async fn stream_new_messages<S>(
 ) -> Result<impl Stream<Item = Message> + Send, StreamSetupError>
 where
     S: Spawn + Send + Sync + Unpin + 'static,
-    S::Cancel: Unpin + 'static,
+    S::Handle: Unpin + 'static,
 {
     let session_generator_arc = Arc::new(ConfigSessionGenerator::new(imap_config.clone()));
     let watcher =
