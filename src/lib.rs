@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use async_native_tls::TlsStream;
 use async_std::net::TcpStream;
+use async_trait::async_trait;
 use thiserror::Error;
 
 pub use email::inbox::WatchError;
@@ -49,6 +50,16 @@ impl From<email::StreamSetupError> for StreamSetupError {
     }
 }
 
+/// `CloseableStream` is a stream that be cleaned up manually. The implementation is free to (and likely should) clean
+/// up resources on drop, but given the async nature of this trait, this should not block, for risk of blocking the
+/// event loop.
+#[async_trait]
+pub trait CloseableStream: Stream {
+    // close will clean up all resources associated with the stream. This returned `Future` will resolve
+    // when the resources have been cleaned up.
+    async fn close(self);
+}
+
 /// Stream any new messages that come into the inbox provided by the given [`IMAPConfig`].
 ///
 /// This iterator must take ownership of the configuration, due to async implementation details, but callers
@@ -60,7 +71,7 @@ impl From<email::StreamSetupError> for StreamSetupError {
 pub async fn stream_new_messages<S>(
     spawner: Arc<S>,
     imap_config: config::IMAP,
-) -> Result<impl Stream<Item = Message> + Send, StreamSetupError>
+) -> Result<impl CloseableStream<Item = Message> + Send, StreamSetupError>
 where
     S: Spawn + Send + Sync + Unpin + 'static,
     S::Handle: Unpin + 'static,

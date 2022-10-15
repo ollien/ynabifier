@@ -1,6 +1,7 @@
 use futures::{
     channel::mpsc::{self, Receiver},
-    Sink, SinkExt, Stream, StreamExt,
+    future::Shared,
+    select, FutureExt, Sink, SinkExt, Stream, StreamExt,
 };
 use mailparse::{MailParseError, ParsedMail};
 use std::{
@@ -10,14 +11,16 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
+use stop_token::{StopSource, StopToken};
 use thiserror::Error;
 
 use crate::{
     task::{
+        self,
         multi::{self, Runner, Task},
-        CancelOnDrop, MultiCancel, Spawn, SpawnError,
+        CancelOnDrop, Spawn, SpawnError,
     },
-    CHANNEL_SIZE,
+    CloseableStream, CHANNEL_SIZE,
 };
 
 use async_trait::async_trait;
@@ -79,9 +82,12 @@ pub enum StreamSetupError {
 }
 
 /// `MessageStream` is a stream of any messages returned from `stream_incoming_messages`.
-pub struct MessageStream {
+pub struct MessageStream<H> {
     output_stream: Receiver<Message>,
-    _cancel_guard: CancelOnDrop<MultiCancel>,
+    sink_stop_source: StopSource,
+    stream_task_handle: H,
+    // TODO: This should join too
+    cancel_guard: CancelOnDrop<multi::CancelHandle>,
 }
 
 impl SequenceNumber {
@@ -97,12 +103,32 @@ impl Display for SequenceNumber {
     }
 }
 
-impl Stream for MessageStream {
+impl<H: Unpin> Stream for MessageStream<H> {
     type Item = Message;
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         let output_stream = &mut self.get_mut().output_stream;
 
         Pin::new(output_stream).poll_next(cx)
+    }
+}
+
+#[async_trait]
+impl<H: task::Handle + Send + Unpin> CloseableStream for MessageStream<H> {
+    async fn close(self) {
+        let Self {
+            output_stream: _,
+            sink_stop_source,
+            stream_task_handle,
+            cancel_guard,
+        } = self;
+
+        drop(cancel_guard);
+        drop(sink_stop_source);
+        // If we fail to join, the resources are as cleaned up as we're going to get them. Bubbling this up
+        // is kinda tricky, and honestly, is only going to happen if the tasks got killed for some reason.
+        if let Err(err) = stream_task_handle.join().await {
+            error!("Failed to join with sequence number stream: {:?}", err);
+        }
     }
 }
 
@@ -130,9 +156,9 @@ pub async fn stream_incoming_messages<M, F, S>(
     spawn: Arc<S>,
     sequence_number_stream: M,
     fetcher: F,
-) -> Result<MessageStream, StreamSetupError>
+) -> Result<MessageStream<S::Handle>, StreamSetupError>
 where
-    M: Stream<Item = SequenceNumber> + Send + Unpin + 'static,
+    M: CloseableStream<Item = SequenceNumber> + Send + Unpin + 'static,
     F: MessageFetcher + Send + Sync + 'static,
     F::Error: Sync + Send,
     S: Spawn + Send + Sync + 'static,
@@ -143,21 +169,28 @@ where
     let spawn_clone = spawn.clone();
     let (runner, runner_cancel_handle) =
         multi::listen_for_tasks(spawn).map_err(StreamSetupError::SpawnFailed)?;
-    let stream_cancel = spawn_clone
+    let stop_source = StopSource::new();
+    let stop_token = stop_source.token();
+    let stream_handle = spawn_clone
         .spawn(async move {
             let mut runner = runner;
 
-            stream_incoming_messages_to_sink(&mut runner, sequence_number_stream, fetcher, tx)
-                .await;
+            stream_incoming_messages_to_sink(
+                &mut runner,
+                sequence_number_stream,
+                fetcher,
+                tx,
+                stop_token,
+            )
+            .await;
         })
         .map_err(StreamSetupError::SpawnFailed)?;
 
     Ok(MessageStream {
         output_stream: rx,
-        _cancel_guard: CancelOnDrop::new(MultiCancel::new(vec![
-            Box::new(stream_cancel),
-            Box::new(runner_cancel_handle),
-        ])),
+        sink_stop_source: stop_source,
+        stream_task_handle: stream_handle,
+        cancel_guard: CancelOnDrop::new(runner_cancel_handle),
     })
 }
 /// Fetch any messages from the incoming stream of sequence numbers, and send them to the output sink.
@@ -168,15 +201,19 @@ async fn stream_incoming_messages_to_sink<N, F, O>(
     mut sequence_number_stream: N,
     fetcher: F,
     output_sink: O,
+    stop_token: StopToken,
 ) where
-    N: Stream<Item = SequenceNumber> + Unpin,
+    N: CloseableStream<Item = SequenceNumber> + Unpin,
     F: MessageFetcher + Send + Sync + 'static,
     F::Error: Send + Sync,
     O: Sink<Message> + Send + Unpin + Clone + 'static,
     O::Error: Debug,
 {
     let fetcher_arc = Arc::new(fetcher);
-    while let Some(sequence_number) = sequence_number_stream.next().await {
+    let shared_token = stop_token.shared();
+    while let Some(sequence_number) =
+        next_or_stop(shared_token.clone(), &mut sequence_number_stream).await
+    {
         let fetcher_arc_clone = fetcher_arc.clone();
         let output_sink_clone = output_sink.clone();
 
@@ -208,6 +245,18 @@ async fn stream_incoming_messages_to_sink<N, F, O>(
                 "failed to spawn task to fetch sequence number {sequence_number}: {spawn_err:?}"
             );
         }
+    }
+
+    sequence_number_stream.close().await;
+}
+
+async fn next_or_stop<S: Stream + Unpin>(
+    stop_token: Shared<StopToken>,
+    stream: &mut S,
+) -> Option<S::Item> {
+    select! {
+        _ = stop_token.fuse() => None,
+        item = stream.next().fuse() => item
     }
 }
 
@@ -241,13 +290,17 @@ mod tests {
     use std::{
         collections::HashMap,
         fmt::{Display, Formatter},
+        iter,
         time::Duration,
     };
 
     use crate::testutil::TokioSpawner;
 
     use super::*;
-    use futures::{select, StreamExt};
+    use futures::{
+        channel::oneshot::{self, Sender},
+        select, StreamExt,
+    };
     use futures::{stream, FutureExt};
     use futures_timer::Delay;
     use thiserror::Error;
@@ -295,9 +348,41 @@ mod tests {
         }
     }
 
+    struct TrackedCloseableSteam<S> {
+        stream: S,
+        tx: Sender<()>,
+    }
+
+    impl<S> TrackedCloseableSteam<S> {
+        pub fn new(stream: S, oneshot_sender: Sender<()>) -> Self {
+            Self {
+                stream,
+                tx: oneshot_sender,
+            }
+        }
+    }
+
+    impl<S: Stream + Unpin> Stream for TrackedCloseableSteam<S> {
+        type Item = S::Item;
+        fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            let stream = &mut self.get_mut().stream;
+
+            Pin::new(stream).poll_next(cx)
+        }
+    }
+
+    #[async_trait]
+    impl<S: Stream + Send + Unpin> CloseableStream for TrackedCloseableSteam<S> {
+        async fn close(self) {
+            self.tx.send(()).expect("failed to signal finished");
+        }
+    }
+
     #[tokio::test]
     async fn test_messages_from_streamer_go_to_sink() {
-        let sequence_number_stream = stream::iter(vec![SequenceNumber(123)].into_iter());
+        let (tx, _rx) = oneshot::channel::<()>();
+        let sequence_number_stream =
+            TrackedCloseableSteam::new(stream::iter(vec![SequenceNumber(123)].into_iter()), tx);
         let mut mock_fetcher = MockMessageFetcher::new();
 
         mock_fetcher.stage_message(SequenceNumber(123), "hello, world!");
@@ -312,6 +397,28 @@ mod tests {
                 "hello, world!".bytes().collect::<Vec<u8>>(),
                 msg.expect("empty channel").raw(),
             ),
+            _ = Delay::new(Duration::from_secs(5)).fuse() => panic!("test timed out"),
+        };
+    }
+
+    #[tokio::test]
+    async fn test_closing_stream_closes_underlying_stream() {
+        let (tx, rx) = oneshot::channel::<()>();
+        let sequence_number_stream =
+            TrackedCloseableSteam::new(stream::iter(iter::empty::<SequenceNumber>()), tx);
+
+        let message_stream = stream_incoming_messages(
+            Arc::new(TokioSpawner),
+            sequence_number_stream,
+            MockMessageFetcher::new(),
+        )
+        .await
+        .expect("failed to setup stream");
+
+        message_stream.close().await;
+
+        select! {
+            res = rx.fuse() => assert!(res.is_ok(), "did not get close signal"),
             _ = Delay::new(Duration::from_secs(5)).fuse() => panic!("test timed out"),
         };
     }

@@ -3,14 +3,15 @@
 use self::idle::{Idler, IdlerCell, SessionCell, SessionState};
 use super::{login::SessionGenerator, SequenceNumber};
 use crate::{
-    task::{Spawn, SpawnError},
-    IMAPSession, IMAPTransportStream,
+    task::{self, Spawn, SpawnError},
+    CloseableStream, IMAPSession, IMAPTransportStream,
 };
 use async_imap::{
     error::{Error as IMAPError, Result as IMAPResult},
-    extensions::idle::Handle,
+    extensions::idle::Handle as IMAPIdleHandle,
     imap_proto::{MailboxDatum, Response},
 };
+use async_trait::async_trait;
 use futures::{channel::mpsc, future::Shared, select, FutureExt, SinkExt, Stream};
 use std::{
     fmt::Debug,
@@ -45,7 +46,7 @@ enum IdleWatchError {
 pub async fn watch_for_new_messages<S, G>(
     spawner: &S,
     session_generator: Arc<G>,
-) -> Result<impl Stream<Item = SequenceNumber>, WatchError>
+) -> Result<impl CloseableStream<Item = SequenceNumber>, WatchError>
 where
     S: Spawn + Sync,
     S::Handle: Unpin,
@@ -72,35 +73,58 @@ where
 
     // NOTE: We deliberately *DO NOT* want a canceler here. We want the ability to clean up our sessions, so we use
     // a StopToken. If we must stop, the executor will kill us from the top level.
-    spawner
+    let task_handle = spawner
         .spawn(watch_future)
         .map_err(WatchError::SpawnError)?;
 
-    let stream = SequenceNumberStream::new(rx, stop_src);
+    let stream = SequenceNumberStream::new(rx, stop_src, task_handle);
 
     Ok(stream)
 }
 
-struct SequenceNumberStream {
+struct SequenceNumberStream<H: Unpin + Send> {
     output_stream: mpsc::Receiver<SequenceNumber>,
-    _stop_src: StopSource,
+    stop_src: StopSource,
+    handle: H,
 }
 
-impl SequenceNumberStream {
-    pub fn new(output_stream: mpsc::Receiver<SequenceNumber>, stop_src: StopSource) -> Self {
+impl<H: Unpin + Send> SequenceNumberStream<H> {
+    pub fn new(
+        output_stream: mpsc::Receiver<SequenceNumber>,
+        stop_src: StopSource,
+        handle: H,
+    ) -> Self {
         Self {
             output_stream,
-            _stop_src: stop_src,
+            stop_src,
+            handle,
         }
     }
 }
 
-impl Stream for SequenceNumberStream {
+impl<H: Unpin + Send> Stream for SequenceNumberStream<H> {
     type Item = SequenceNumber;
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let output_stream = &mut self.get_mut().output_stream;
 
         Pin::new(output_stream).poll_next(cx)
+    }
+}
+
+#[async_trait]
+impl<H: Unpin + task::Handle + Send> CloseableStream for SequenceNumberStream<H> {
+    async fn close(self) {
+        let Self {
+            handle,
+            stop_src,
+            output_stream: _,
+        } = self;
+        drop(stop_src);
+        // If we fail to join, the resources are as cleaned up as we're going to get them. Bubbling this up
+        // is kinda tricky, and honestly, is only going to happen if the tasks got killed for some reason.
+        if let Err(err) = handle.join().await {
+            error!("Failed to join with join task: {:?}", err);
+        }
     }
 }
 
@@ -202,7 +226,7 @@ async fn watch_for_new_emails_until_fail(
         // If we've begun idling however, then we need to finish up and return the reclaimed session
         SessionState::IdleReady(idle_cell) => {
             let idle_handle = idle_cell.into_inner();
-            debug!("marking done...");
+            debug!("Marking idle handle done...");
             idle_handle.done().await.map_err(IdleWatchError::IMAPError)
         }
     }
@@ -220,7 +244,7 @@ async fn prepare_idler_if_unstopped<I: Idler + Unpin>(
 }
 
 async fn idle_for_email(
-    idle_handle: &mut Handle<IMAPTransportStream>,
+    idle_handle: &mut IMAPIdleHandle<IMAPTransportStream>,
 ) -> Result<SequenceNumber, IdleWatchError> {
     loop {
         let idle_res = idle::wait_for_data(idle_handle).await;

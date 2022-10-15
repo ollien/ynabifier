@@ -1,4 +1,4 @@
-use crate::{IMAPSession, SessionGenerator, Message};
+use crate::{IMAPSession, Message, SessionGenerator};
 use std::sync::Arc;
 
 use super::{MessageFetcher, SequenceNumber};
@@ -53,9 +53,7 @@ where
         // TODO: this could use RAII (has the same problem as `inbox` does)
         session.logout().await.map_err(FetchError::TeardownFailed)?;
 
-        Ok(
-            Message{raw: body.to_vec()},
-        )
+        Ok(Message { raw: body.to_vec() })
     }
 }
 

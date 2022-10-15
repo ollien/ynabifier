@@ -8,7 +8,6 @@ use log::LevelFilter;
 use tokio::task::{JoinError, JoinHandle};
 use ynabifier::task::{Handle, Join};
 
-use std::time::Duration;
 use std::{fs::File, process, sync::Arc};
 use tokio::runtime::Runtime;
 use ynabifier::parse::Transaction;
@@ -16,7 +15,7 @@ use ynabifier::{
     config::{Config, YNABAccount},
     task::{Cancel, Spawn, SpawnError},
     ynab::Client as YNABClient,
-    Message,
+    CloseableStream, Message,
 };
 
 fn main() {
@@ -68,15 +67,13 @@ fn listen_for_transactions(config: &Config) -> Result<(), anyhow::Error> {
     runtime.block_on(async move {
         let ynab_client = YNABClient::new(config.ynab().personal_access_token().to_string());
         let mut stream =
-            ynabifier::stream_new_messages(Arc::new(TokioSpawner), config.imap().clone())
-                .await?
-                .fuse();
+            ynabifier::stream_new_messages(Arc::new(TokioSpawner), config.imap().clone()).await?;
 
         let accounts = config.ynab().accounts();
         loop {
             select! {
                 _ = tokio::signal::ctrl_c().fuse() => break,
-                maybe_msg = stream.next() => {
+                maybe_msg = stream.next().fuse() => {
                     if maybe_msg.is_none() {
                         break;
                     }
@@ -100,15 +97,12 @@ fn listen_for_transactions(config: &Config) -> Result<(), anyhow::Error> {
             }
         }
 
-        drop(stream);
         debug!("waiting");
         // Wait for the user to either ctrl-c a second time to forcibly shut off the app, or wait a "reasonable"
         // amount of time for cleanup
         select! {
             _ = tokio::signal::ctrl_c().fuse() => (),
-            // TODO: just a plain sleep is stupid. We should find some way to thread through a true "cleaned up"
-            // signal
-            _ = tokio::time::sleep(Duration::from_secs(10)).fuse() => (),
+            _ = stream.close().fuse() => (),
         }
 
         Ok(())
