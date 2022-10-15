@@ -34,6 +34,14 @@ pub enum WatchError {
     SpawnError(SpawnError),
 }
 
+#[derive(Error, Debug)]
+enum IdleWatchError {
+    #[error("IMAP failure while idling: {0}")]
+    IMAPError(IMAPError),
+    #[error("Disconnected from IMAP server")]
+    Disconnected,
+}
+
 pub async fn watch_for_new_messages<S, G>(
     spawner: &S,
     session_generator: Arc<G>,
@@ -75,16 +83,14 @@ where
 
 struct SequenceNumberStream {
     output_stream: mpsc::Receiver<SequenceNumber>,
-    // It is only Option so that Drop can be implemented safely.
-    // Exists so that on drop, the watch task will stop.
-    _stop_src: Option<StopSource>,
+    _stop_src: StopSource,
 }
 
 impl SequenceNumberStream {
     pub fn new(output_stream: mpsc::Receiver<SequenceNumber>, stop_src: StopSource) -> Self {
         Self {
             output_stream,
-            _stop_src: Some(stop_src),
+            _stop_src: stop_src,
         }
     }
 }
@@ -155,12 +161,15 @@ async fn watch_for_new_emails_until_fail(
     session: IMAPSession,
     sender: &mut mpsc::Sender<SequenceNumber>,
     stop: Shared<StopToken>,
-) -> Result<IMAPSession, IMAPError> {
+) -> Result<IMAPSession, IdleWatchError> {
     let mut session_cell = SessionCell::new(session);
 
     loop {
         let idle_cell = session_cell.get_idler_cell();
-        let maybe_idle_handle = prepare_idler_if_unstopped(idle_cell, stop.clone()).await?;
+        let maybe_idle_handle = prepare_idler_if_unstopped(idle_cell, stop.clone())
+            .await
+            .map_err(IdleWatchError::IMAPError)?;
+
         if maybe_idle_handle.is_none() {
             break;
         }
@@ -194,7 +203,7 @@ async fn watch_for_new_emails_until_fail(
         SessionState::IdleReady(idle_cell) => {
             let idle_handle = idle_cell.into_inner();
             debug!("marking done...");
-            idle_handle.done().await
+            idle_handle.done().await.map_err(IdleWatchError::IMAPError)
         }
     }
 }
@@ -212,7 +221,7 @@ async fn prepare_idler_if_unstopped<I: Idler + Unpin>(
 
 async fn idle_for_email(
     idle_handle: &mut Handle<IMAPTransportStream>,
-) -> IMAPResult<SequenceNumber> {
+) -> Result<SequenceNumber, IdleWatchError> {
     loop {
         let idle_res = idle::wait_for_data(idle_handle).await;
         match idle_res {
@@ -223,14 +232,12 @@ async fn idle_for_email(
                 match maybe_sequence_number {
                     Some(sequence_number) => return Ok(sequence_number),
                     None => {
-                        debug!("re-issuing IDLE after getting non-EXISTS response from IDLE command: {:?}", response);
+                        debug!("re-waiting for IDLE after getting non-EXISTS response from IDLE command: {:?}", response);
                     }
                 }
             }
-            Err(idle::Error::AsyncIMAPError(err)) => return Err(err),
-            Err(idle::Error::NeedReconnect) => {
-                debug!("re-issuing IDLE after disconnect");
-            }
+            Err(idle::Error::AsyncIMAPError(err)) => return Err(IdleWatchError::IMAPError(err)),
+            Err(idle::Error::NeedReconnect) => return Err(IdleWatchError::Disconnected),
         }
     }
 }
