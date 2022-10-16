@@ -97,7 +97,6 @@ fn listen_for_transactions(config: &Config) -> Result<(), anyhow::Error> {
             }
         }
 
-        debug!("waiting");
         // Wait for the user to either ctrl-c a second time to forcibly shut off the app, or wait a "reasonable"
         // amount of time for cleanup
         select! {

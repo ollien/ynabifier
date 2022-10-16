@@ -8,6 +8,7 @@ use std::sync::Arc;
 use async_native_tls::TlsStream;
 use async_std::net::TcpStream;
 use async_trait::async_trait;
+use stop_token::StopSource;
 use thiserror::Error;
 
 pub use email::inbox::WatchError;
@@ -82,8 +83,10 @@ where
             .await
             .map_err(StreamSetupError::WatchFailed)?;
 
-    let fetcher = RawFetcher::new(session_generator_arc);
-    let fetch_stream = email::stream_incoming_messages(spawner, watcher, fetcher).await?;
+    let stop_source = StopSource::new();
+    let fetcher = RawFetcher::new(session_generator_arc, stop_source.token());
+    let fetch_stream =
+        email::stream_incoming_messages(spawner, watcher, fetcher, stop_source).await?;
 
     Ok(fetch_stream)
 }

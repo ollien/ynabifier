@@ -146,7 +146,7 @@ where
 
 /// Get a stream of any messages that come into the given [`SequenceNumberStreamer`]. These messages will be fetched
 /// by sequence number using the given [`MessageFetcher`]. This requires spawning several background tasks, so a
-/// [`Spawn`] is also required.
+/// [`Spawn`] is also required. When the given `stop_source` is triggered, all fetching and streaming will stop.
 ///
 /// # Errors
 /// If the stream cannot be set up (i.e. because the underlying task could not be set up for any reason), then it is
@@ -156,6 +156,7 @@ pub async fn stream_incoming_messages<M, F, S>(
     spawn: Arc<S>,
     sequence_number_stream: M,
     fetcher: F,
+    stop_source: StopSource,
 ) -> Result<MessageStream<S::Handle>, StreamSetupError>
 where
     M: CloseableStream<Item = SequenceNumber> + Send + Unpin + 'static,
@@ -169,7 +170,6 @@ where
     let spawn_clone = spawn.clone();
     let (runner, runner_cancel_handle) =
         multi::listen_for_tasks(spawn).map_err(StreamSetupError::SpawnFailed)?;
-    let stop_source = StopSource::new();
     let stop_token = stop_source.token();
     let stream_handle = spawn_clone
         .spawn(async move {
@@ -387,10 +387,14 @@ mod tests {
 
         mock_fetcher.stage_message(SequenceNumber(123), "hello, world!");
 
-        let mut broker_handle =
-            stream_incoming_messages(Arc::new(TokioSpawner), sequence_number_stream, mock_fetcher)
-                .await
-                .expect("failed to setup stream");
+        let mut broker_handle = stream_incoming_messages(
+            Arc::new(TokioSpawner),
+            sequence_number_stream,
+            mock_fetcher,
+            StopSource::new(),
+        )
+        .await
+        .expect("failed to setup stream");
 
         select! {
             msg = broker_handle.next().fuse() => assert_eq!(
@@ -411,6 +415,7 @@ mod tests {
             Arc::new(TokioSpawner),
             sequence_number_stream,
             MockMessageFetcher::new(),
+            StopSource::new(),
         )
         .await
         .expect("failed to setup stream");
