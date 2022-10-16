@@ -1,7 +1,6 @@
 use futures::{
     channel::mpsc::{self, Receiver},
-    future::Shared,
-    select, FutureExt, Sink, SinkExt, Stream, StreamExt,
+    Sink, SinkExt, Stream, StreamExt,
 };
 use mailparse::{MailParseError, ParsedMail};
 use std::{
@@ -18,7 +17,7 @@ use crate::{
     task::{
         self,
         multi::{self, Runner, Task},
-        CancelOnDrop, Spawn, SpawnError,
+        CancelOnDrop, ResolveOrStop, Spawn, SpawnError,
     },
     CloseableStream, CHANNEL_SIZE,
 };
@@ -201,18 +200,20 @@ async fn stream_incoming_messages_to_sink<N, F, O>(
     mut sequence_number_stream: N,
     fetcher: F,
     output_sink: O,
-    stop_token: StopToken,
+    mut stop_token: StopToken,
 ) where
-    N: CloseableStream<Item = SequenceNumber> + Unpin,
+    N: CloseableStream<Item = SequenceNumber> + Send + Unpin,
     F: MessageFetcher + Send + Sync + 'static,
     F::Error: Send + Sync,
     O: Sink<Message> + Send + Unpin + Clone + 'static,
     O::Error: Debug,
 {
     let fetcher_arc = Arc::new(fetcher);
-    let shared_token = stop_token.shared();
-    while let Some(sequence_number) =
-        next_or_stop(shared_token.clone(), &mut sequence_number_stream).await
+    while let Some(sequence_number) = sequence_number_stream
+        .next()
+        .resolve_or_stop(&mut stop_token)
+        .await
+        .flatten()
     {
         let fetcher_arc_clone = fetcher_arc.clone();
         let output_sink_clone = output_sink.clone();
@@ -248,16 +249,6 @@ async fn stream_incoming_messages_to_sink<N, F, O>(
     }
 
     sequence_number_stream.close().await;
-}
-
-async fn next_or_stop<S: Stream + Unpin>(
-    stop_token: Shared<StopToken>,
-    stream: &mut S,
-) -> Option<S::Item> {
-    select! {
-        _ = stop_token.fuse() => None,
-        item = stream.next().fuse() => item
-    }
 }
 
 /// Fetch a message with the given sequence number, and send its output to this Task's
