@@ -14,11 +14,7 @@ use stop_token::{StopSource, StopToken};
 use thiserror::Error;
 
 use crate::{
-    task::{
-        self,
-        multi::{self, Runner, Task},
-        CancelOnDrop, ResolveOrStop, Spawn, SpawnError,
-    },
+    task::{self, ResolveOrStop, Spawn, SpawnError},
     CloseableStream, CHANNEL_SIZE,
 };
 
@@ -68,8 +64,15 @@ pub trait MessageFetcher {
     type Error: Error;
 
     /// Fetch an individual email based on its sequence number. Unfortunately, because the format cannot be guaranteed
-    ///  to be UTF-8, each message returned must return an owned copy of the raw bytes for further post-processing.
-    async fn fetch_message(&self, sequence_number: SequenceNumber) -> Result<Message, Self::Error>;
+    /// to be UTF-8, each message returned must return an owned copy of the raw bytes for further post-processing.
+    /// When the given StopToken resolves, the fetcher implementation is expected to clean up all of its resources.
+    /// If it is possible to return a message, the fetcher is free to do so, but otherwise it may wish to return
+    /// some kind of indicative error.
+    async fn fetch_message(
+        &self,
+        sequence_number: SequenceNumber,
+        stop_token: &mut StopToken,
+    ) -> Result<Message, Self::Error>;
 }
 
 /// `StreamSetupError` will be returned if there was an error in setting up the message stream.
@@ -85,8 +88,6 @@ pub struct MessageStream<H> {
     output_stream: Receiver<Message>,
     sink_stop_source: StopSource,
     stream_task_handle: H,
-    // TODO: This should join too
-    cancel_guard: CancelOnDrop<multi::CancelHandle>,
 }
 
 impl SequenceNumber {
@@ -118,10 +119,8 @@ impl<H: task::Handle + Send + Unpin> CloseableStream for MessageStream<H> {
             output_stream: _,
             sink_stop_source,
             stream_task_handle,
-            cancel_guard,
         } = self;
 
-        drop(cancel_guard);
         drop(sink_stop_source);
         // If we fail to join, the resources are as cleaned up as we're going to get them. Bubbling this up
         // is kinda tricky, and honestly, is only going to happen if the tasks got killed for some reason.
@@ -167,19 +166,16 @@ where
     let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
 
     let spawn_clone = spawn.clone();
-    let (runner, runner_cancel_handle) =
-        multi::listen_for_tasks(spawn).map_err(StreamSetupError::SpawnFailed)?;
     let stop_token = stop_source.token();
     let stream_handle = spawn_clone
         .spawn(async move {
-            let mut runner = runner;
-
+            let mut stop_token = stop_token;
             stream_incoming_messages_to_sink(
-                &mut runner,
+                spawn,
                 sequence_number_stream,
                 fetcher,
                 tx,
-                stop_token,
+                &mut stop_token,
             )
             .await;
         })
@@ -189,19 +185,20 @@ where
         output_stream: rx,
         sink_stop_source: stop_source,
         stream_task_handle: stream_handle,
-        cancel_guard: CancelOnDrop::new(runner_cancel_handle),
     })
 }
 /// Fetch any messages from the incoming stream of sequence numbers, and send them to the output sink.
 ///
 /// This is meant to be forked into the background, so individual message failures will be logged.
-async fn stream_incoming_messages_to_sink<N, F, O>(
-    runner: &mut Runner,
+async fn stream_incoming_messages_to_sink<S, N, F, O>(
+    spawn: Arc<S>,
     mut sequence_number_stream: N,
     fetcher: F,
     output_sink: O,
-    mut stop_token: StopToken,
+    stop_token: &mut StopToken,
 ) where
+    S: Spawn + Send + Sync + 'static,
+    S::Handle: 'static,
     N: CloseableStream<Item = SequenceNumber> + Send + Unpin,
     F: MessageFetcher + Send + Sync + 'static,
     F::Error: Send + Sync,
@@ -211,20 +208,27 @@ async fn stream_incoming_messages_to_sink<N, F, O>(
     let fetcher_arc = Arc::new(fetcher);
     while let Some(sequence_number) = sequence_number_stream
         .next()
-        .resolve_or_stop(&mut stop_token)
+        .resolve_or_stop(stop_token)
         .await
         .flatten()
     {
         let fetcher_arc_clone = fetcher_arc.clone();
         let output_sink_clone = output_sink.clone();
 
+        let stop_token_clone = stop_token.clone();
         let fetch_future = async move {
             let fetcher = fetcher_arc_clone;
             let mut output_sink_clone = output_sink_clone;
+            let mut stop_token_clone = stop_token_clone;
 
-            let fetch_res =
-                fetch_and_sink_message(fetcher.as_ref(), &mut output_sink_clone, sequence_number)
-                    .await;
+            let fetch_res = fetch_and_sink_message(
+                fetcher.as_ref(),
+                &mut output_sink_clone,
+                sequence_number,
+                &mut stop_token_clone,
+            )
+            .await;
+
             match fetch_res {
                 Ok(_) => {}
                 Err(StreamError::FetchFailed(err)) => error!("failed to fetch message: {:?}", err),
@@ -234,13 +238,13 @@ async fn stream_incoming_messages_to_sink<N, F, O>(
             }
         };
 
-        let fetch_task = Task::new(
-            format!("Fetch sequence number {}", sequence_number),
-            Box::new(fetch_future),
+        debug!(
+            "Starting fetch task for sequence number {}",
+            sequence_number
         );
-        debug!("submitting task for sequence number {}", sequence_number);
-        let spawn_res = runner.submit_new_task(fetch_task).await;
 
+        // TODO: this needs to be able to be handled by Close
+        let spawn_res = spawn.spawn(fetch_future);
         if let Err(spawn_err) = spawn_res {
             error!(
                 "failed to spawn task to fetch sequence number {sequence_number}: {spawn_err:?}"
@@ -257,6 +261,7 @@ async fn fetch_and_sink_message<F, O>(
     fetcher: &F,
     output_sink: &mut O,
     sequence_number: SequenceNumber,
+    stop_token: &mut StopToken,
 ) -> Result<(), StreamError<F, O, Message>>
 where
     F: MessageFetcher,
@@ -264,7 +269,7 @@ where
     O::Error: Debug,
 {
     let msg = fetcher
-        .fetch_message(sequence_number)
+        .fetch_message(sequence_number, stop_token)
         .await
         .map_err(StreamError::FetchFailed)?;
 
@@ -332,6 +337,7 @@ mod tests {
         async fn fetch_message(
             &self,
             sequence_number: SequenceNumber,
+            _stop_token: &mut StopToken,
         ) -> Result<Message, Self::Error> {
             self.messages.get(&sequence_number).cloned().ok_or_else(|| {
                 StringError(format!("sequence number {:?} not found", sequence_number))

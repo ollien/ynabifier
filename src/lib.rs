@@ -84,7 +84,7 @@ where
             .map_err(StreamSetupError::WatchFailed)?;
 
     let stop_source = StopSource::new();
-    let fetcher = RawFetcher::new(session_generator_arc, stop_source.token());
+    let fetcher = RawFetcher::new(session_generator_arc);
     let fetch_stream =
         email::stream_incoming_messages(spawner, watcher, fetcher, stop_source).await?;
 

@@ -28,10 +28,6 @@ impl<T> Cancel for JoinHandle<T> {
     fn cancel(self) {
         self.abort();
     }
-
-    fn cancel_boxed(self: Box<Self>) {
-        self.cancel();
-    }
 }
 
 #[async_trait]

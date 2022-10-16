@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-pub use cancel::{Cancel, Multi as MultiCancel, OnDrop as CancelOnDrop};
 pub(crate) use interrupt::ResolveOrStop;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -7,9 +6,7 @@ use std::fmt::{Display, Formatter};
 use futures::Future;
 use thiserror::Error;
 
-mod cancel;
 mod interrupt;
-pub(crate) mod multi;
 
 /// `SpawnError` describes why a spawn may have failed to occur.
 #[derive(Error, Debug)]
@@ -19,6 +16,13 @@ impl Display for SpawnError {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         f.write_str(&self.0)
     }
+}
+
+/// Cancel represents a task that can be cancelled
+pub trait Cancel {
+    /// Cancel the given task. The specifics of how this operates are runtime dependent, but typically
+    /// it will stop the task at the next `await`.
+    fn cancel(self);
 }
 
 /// Join will wait for a task to finish, ignoring its return value.

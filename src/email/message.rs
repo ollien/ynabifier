@@ -26,15 +26,11 @@ pub enum FetchError {
 /// Fetches a message in its unadorned from the mail server
 pub struct RawFetcher<G> {
     session_generator: Arc<G>,
-    stop_token: StopToken,
 }
 
 impl<G> RawFetcher<G> {
-    pub fn new(session_generator: Arc<G>, stop_token: StopToken) -> Self {
-        Self {
-            session_generator,
-            stop_token,
-        }
+    pub fn new(session_generator: Arc<G>) -> Self {
+        Self { session_generator }
     }
 }
 
@@ -46,18 +42,21 @@ where
 {
     type Error = FetchError;
 
-    async fn fetch_message(&self, sequence_number: SequenceNumber) -> Result<Message, Self::Error> {
-        let mut stop_token = self.stop_token.clone();
+    async fn fetch_message(
+        &self,
+        sequence_number: SequenceNumber,
+        stop_token: &mut StopToken,
+    ) -> Result<Message, Self::Error> {
         let session_gen = self.session_generator.as_ref();
         let mut session = generate_fetchable_session(session_gen)
-            .resolve_or_stop(&mut stop_token)
+            .resolve_or_stop(stop_token)
             .await
             .ok_or(FetchError::Stopped)?
             .map_err(FetchError::IMAPSetupFailed)?;
 
         let body_res = {
             let msg_fetch_result = get_message_from_session(sequence_number, &mut session)
-                .resolve_or_stop(&mut stop_token)
+                .resolve_or_stop(stop_token)
                 .await;
 
             match msg_fetch_result {

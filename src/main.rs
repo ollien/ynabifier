@@ -163,10 +163,6 @@ impl Cancel for TokioJoinHandle {
     fn cancel(self) {
         self.0.abort();
     }
-
-    fn cancel_boxed(self: Box<Self>) {
-        self.cancel();
-    }
 }
 
 #[async_trait]
