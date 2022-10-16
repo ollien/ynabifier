@@ -1,10 +1,10 @@
-use crate::{IMAPSession, Message, SessionGenerator};
+use crate::{task::ResolveOrStop, IMAPSession, Message, SessionGenerator};
 use std::sync::Arc;
 
 use super::{MessageFetcher, SequenceNumber};
 use async_imap::{error::Error as IMAPError, types::Fetch};
 use async_trait::async_trait;
-use futures::{select, Future, FutureExt, StreamExt};
+use futures::StreamExt;
 use stop_token::StopToken;
 use thiserror::Error;
 
@@ -21,25 +21,6 @@ pub enum FetchError {
     NoBody(SequenceNumber),
     #[error("Fetcher received stop signal")]
     Stopped,
-}
-
-#[async_trait]
-trait ResolveOrStop {
-    type Output;
-
-    async fn resolve_or_stop(self, stop_token: &mut StopToken) -> Option<Self::Output>;
-}
-
-#[async_trait]
-impl<F: Future + Send> ResolveOrStop for F {
-    type Output = F::Output;
-
-    async fn resolve_or_stop(self, stop_token: &mut StopToken) -> Option<Self::Output> {
-        select! {
-            res = self.fuse() => Some(res),
-            _ = stop_token.fuse() => None
-        }
-    }
 }
 
 /// Fetches a message in its unadorned from the mail server

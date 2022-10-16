@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 pub use cancel::{Cancel, Multi as MultiCancel, OnDrop as CancelOnDrop};
+pub(crate) use interrupt::ResolveOrStop;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
@@ -7,6 +8,7 @@ use futures::Future;
 use thiserror::Error;
 
 mod cancel;
+mod interrupt;
 pub(crate) mod multi;
 
 /// `SpawnError` describes why a spawn may have failed to occur.
