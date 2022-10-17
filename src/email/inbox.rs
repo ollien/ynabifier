@@ -3,7 +3,8 @@
 use self::idle::{Idler, IdlerCell, SessionCell, SessionState};
 use super::{login::SessionGenerator, SequenceNumber};
 use crate::{
-    task::{self, Spawn, SpawnError},
+    email::inbox::reconnect::Delay,
+    task::{self, ResolveOrStop, Spawn, SpawnError},
     CloseableStream, IMAPSession, IMAPTransportStream,
 };
 use async_imap::{
@@ -27,6 +28,7 @@ use stop_token::{StopSource, StopToken};
 use thiserror::Error;
 
 mod idle;
+mod reconnect;
 
 /// An error that occurs during the setup process of a stream from [`watch`]
 #[derive(Error, Debug)]
@@ -135,7 +137,7 @@ impl<H: Unpin + task::Handle + Send> CloseableStream for SequenceNumberStream<H>
     }
 }
 
-async fn watch_for_new_emails<G: SessionGenerator>(
+async fn watch_for_new_emails<G: SessionGenerator + Sync>(
     session: IMAPSession,
     session_generator: Arc<G>,
     stop: StopToken,
@@ -165,6 +167,7 @@ async fn watch_for_new_emails<G: SessionGenerator>(
             }
             Err(err) => {
                 error!("Failed to watch for new emails: {err}");
+
                 let maybe_session =
                     get_session_with_retry(session_generator.as_ref(), shared_stop.clone()).await;
                 match maybe_session {
@@ -281,33 +284,36 @@ fn get_sequence_number_from_response(response: &Response) -> Option<SequenceNumb
 }
 
 /// continues to try and get a new session. If the Watcher is currently stopped, returns None.
-async fn get_session_with_retry<G: SessionGenerator>(
+async fn get_session_with_retry<G: SessionGenerator + Sync>(
     session_generator: &G,
     stop: Shared<StopToken>,
 ) -> Option<IMAPSession> {
     let mut attempts = 1;
-    let mut fused_stop = stop.fuse();
+    let mut delay = Delay::new();
+
     loop {
         debug!("Generating a new session...");
-        let session_future = get_session(session_generator);
-        select! {
-            _ = fused_stop => break,
-            new_session_res = session_future.fuse() => {
-                match new_session_res {
-                    Ok(new_session) => return Some(new_session),
-                    Err(err) => {
-                        error!("failed to get new session on attempt {attempts}: {err}");
-                        attempts += 1;
-                    }
-                }
-            },
+        let session_res = get_session(session_generator)
+            .resolve_or_stop(stop.clone())
+            .await?;
+
+        match session_res {
+            Ok(new_session) => return Some(new_session),
+            Err(err) => {
+                error!("failed to get new session on attempt {attempts}: {err}");
+                attempts += 1;
+                debug!(
+                    "Waiting for {} seconds before trying again...",
+                    delay.peek_delay().as_secs()
+                );
+
+                delay.backoff_wait().resolve_or_stop(stop.clone()).await?;
+            }
         }
     }
-
-    None
 }
 
-async fn get_session<G: SessionGenerator>(session_generator: &G) -> IMAPResult<IMAPSession> {
+async fn get_session<G: SessionGenerator + Sync>(session_generator: &G) -> IMAPResult<IMAPSession> {
     let mut session = session_generator.new_session().await?;
     session.examine("INBOX").await?;
 
