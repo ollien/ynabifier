@@ -19,7 +19,7 @@ use email::{
     message::RawFetcher,
 };
 use futures::Stream;
-use task::{Spawn, SpawnError};
+use task::{Join, Spawn, SpawnError};
 
 const CHANNEL_SIZE: usize = 16;
 
@@ -76,6 +76,7 @@ pub async fn stream_new_messages<S>(
 where
     S: Spawn + Send + Sync + Unpin + 'static,
     S::Handle: Unpin + 'static,
+    <<S as Spawn>::Handle as Join>::Error: Send,
 {
     let session_generator_arc = Arc::new(ConfigSessionGenerator::new(imap_config.clone()));
     let watcher =

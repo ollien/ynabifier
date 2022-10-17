@@ -1,5 +1,9 @@
 use futures::{
-    channel::mpsc::{self, Receiver},
+    channel::{
+        mpsc::{self, Receiver},
+        oneshot,
+    },
+    lock::Mutex,
     Sink, SinkExt, Stream, StreamExt,
 };
 use mailparse::{MailParseError, ParsedMail};
@@ -14,7 +18,7 @@ use stop_token::{StopSource, StopToken};
 use thiserror::Error;
 
 use crate::{
-    task::{self, ResolveOrStop, Spawn, SpawnError},
+    task::{self, Join, Registry, ResolveOrStop, Spawn, SpawnError},
     CloseableStream, CHANNEL_SIZE,
 };
 
@@ -162,6 +166,7 @@ where
     F::Error: Sync + Send,
     S: Spawn + Send + Sync + 'static,
     S::Handle: 'static,
+    <<S as Spawn>::Handle as Join>::Error: Send,
 {
     let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
 
@@ -199,6 +204,7 @@ async fn stream_incoming_messages_to_sink<S, N, F, O>(
 ) where
     S: Spawn + Send + Sync + 'static,
     S::Handle: 'static,
+    <<S as Spawn>::Handle as Join>::Error: Send,
     N: CloseableStream<Item = SequenceNumber> + Send + Unpin,
     F: MessageFetcher + Send + Sync + 'static,
     F::Error: Send + Sync,
@@ -206,6 +212,7 @@ async fn stream_incoming_messages_to_sink<S, N, F, O>(
     O::Error: Debug,
 {
     let fetcher_arc = Arc::new(fetcher);
+    let task_registry = Arc::new(Mutex::new(Registry::new()));
     while let Some(sequence_number) = sequence_number_stream
         .next()
         .resolve_or_stop(stop_token)
@@ -243,16 +250,40 @@ async fn stream_incoming_messages_to_sink<S, N, F, O>(
             sequence_number
         );
 
-        // TODO: this needs to be able to be handled by Close
-        let spawn_res = spawn.spawn(fetch_future);
-        if let Err(spawn_err) = spawn_res {
-            error!(
-                "failed to spawn task to fetch sequence number {sequence_number}: {spawn_err:?}"
-            );
+        let (token_tx, token_rx) = oneshot::channel();
+        let registry_weak = Arc::downgrade(&task_registry);
+        let spawn_res = spawn.spawn(async move {
+            let task_registry = registry_weak;
+            // This cannot happen, as the tx channel cannot have been dropped.
+            let task_token = token_rx.await.expect("failed to get task token");
+            fetch_future.await;
+
+            // Unregister ourselves fro the registry.
+            // We don't really care if the registry has been dropped, as all we're trying to signal is that we're done.
+            if let Some(registry) = task_registry.upgrade() {
+                registry.lock().await.unregister_handle(task_token);
+            }
+        });
+
+        match spawn_res {
+            Ok(task_handle) => {
+                let token = task_registry.lock().await.register_handle(task_handle);
+                // This cannot happen, as the task cannot have been dropped.
+                token_tx.send(token).expect("failed to send task token");
+            }
+            Err(spawn_err) => {
+                error!(
+                    "failed to spawn task to fetch sequence number {sequence_number}: {spawn_err:?}"
+                );
+            }
         }
     }
 
     sequence_number_stream.close().await;
+    debug!("Joining all remaining fetch tasks...");
+    if let Err(err) = task_registry.lock().await.join_all().await {
+        error!("failed to join all fetch tasks: {:?}", err);
+    };
 }
 
 /// Fetch a message with the given sequence number, and send its output to this Task's
