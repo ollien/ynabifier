@@ -5,16 +5,17 @@ extern crate log;
 
 use std::sync::Arc;
 
+pub use async_imap::error::Error as IMAPError;
+pub use email::Message;
+
 use async_native_tls::TlsStream;
 use async_std::net::TcpStream;
 use async_trait::async_trait;
 use stop_token::StopSource;
 use thiserror::Error;
 
-pub use email::inbox::WatchError;
-pub use email::Message;
-
 use email::{
+    inbox::WatchError,
     login::{ConfigSessionGenerator, SessionGenerator},
     message::RawFetcher,
 };
@@ -37,8 +38,8 @@ type IMAPSession = async_imap::Session<IMAPTransportStream>;
 pub enum StreamSetupError {
     #[error("failed to spawn stream task: {0}")]
     SpawnFailed(SpawnError),
-    #[error("failed to initiate inbox watch: {0}")]
-    WatchFailed(WatchError),
+    #[error("failed to setup IMAP for inbox watch: {0}")]
+    WatchFailed(IMAPError),
 }
 
 impl From<email::StreamSetupError> for StreamSetupError {
@@ -59,7 +60,7 @@ pub trait CloseableStream: Stream {
     async fn close(self);
 }
 
-/// Stream any new messages that come into the inbox provided by the given [`IMAPConfig`].
+/// Stream any new messages that come into the inbox provided by the given [`config::IMAP`].
 ///
 /// This iterator must take ownership of the configuration, due to async implementation details, but callers
 /// are encouraged to clone their configuration if they feel they cannot part with it.
@@ -77,14 +78,18 @@ where
     <<S as Spawn>::Handle as Join>::Error: Send,
 {
     let session_generator_arc = Arc::new(ConfigSessionGenerator::new(imap_config.clone()));
-    let watcher =
-        email::inbox::watch_for_new_messages(spawner.as_ref(), session_generator_arc.clone())
+    let sequence_number_stream =
+        email::inbox::watch(spawner.as_ref(), session_generator_arc.clone())
             .await
-            .map_err(StreamSetupError::WatchFailed)?;
+            .map_err(|err| match err {
+                WatchError::SpawnError(err) => StreamSetupError::SpawnFailed(err),
+                WatchError::IMAPSetupError(err) => StreamSetupError::WatchFailed(err),
+            })?;
 
     let stop_source = StopSource::new();
     let fetcher = RawFetcher::new(session_generator_arc);
-    let fetch_stream = email::stream_incoming_messages(spawner, watcher, fetcher, stop_source)?;
+    let fetch_stream =
+        email::stream_incoming_messages(spawner, sequence_number_stream, fetcher, stop_source)?;
 
     Ok(fetch_stream)
 }

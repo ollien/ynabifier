@@ -146,7 +146,7 @@ where
     SinkFailed(O::Error),
 }
 
-/// Get a stream of any messages that come into the given [`SequenceNumberStreamer`]. These messages will be fetched
+/// Get a stream of any messages that come into the given [`Stream`] of sequence numbers. These messages will be fetched
 /// by sequence number using the given [`MessageFetcher`]. This requires spawning several background tasks, so a
 /// [`Spawn`] is also required. When the given `stop_source` is triggered, all fetching and streaming will stop.
 ///
@@ -416,7 +416,7 @@ mod tests {
 
         mock_fetcher.stage_message(SequenceNumber(123), "hello, world!");
 
-        let mut broker_handle = stream_incoming_messages(
+        let mut message_stream = stream_incoming_messages(
             Arc::new(TokioSpawner),
             sequence_number_stream,
             mock_fetcher,
@@ -424,7 +424,7 @@ mod tests {
         )
         .expect("failed to setup stream");
 
-        let msg = time::timeout(Duration::from_secs(5), broker_handle.next())
+        let msg = time::timeout(Duration::from_secs(5), message_stream.next())
             .await
             .expect("test timed out");
         assert_eq!(

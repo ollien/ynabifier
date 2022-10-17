@@ -10,13 +10,13 @@ use crate::parse::Transaction;
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Failed to parse amount '{0}': {1}")]
-    AmountParseFailure(String, String),
+    AmountParseFailed(String, String),
     #[error("Failed to build URL: {0}")]
     URLBuildFailed(url::ParseError),
     #[error("Failed to build YNAB request: {0}")]
     RequestBuildFailed(reqwest::Error),
     #[error("Failed to send YNAB request: {0}")]
-    RequestFailure(reqwest::Error),
+    RequestFailed(reqwest::Error),
 }
 
 #[derive(Debug, Serialize)]
@@ -70,9 +70,9 @@ impl Client {
     ///
     /// # Errors
     /// An Error is returned under the following circumstances
-    /// - The transaction cannot be serialized to a response properly ([`Error::AmountParseFailure`]).
-    /// - A request cannot be successfully built ([`Error::URLBuildFailure`] or [`Error::RequestBuildFailure`])
-    /// - There is a general HTTP failure ([`Error::RequestFailure`])
+    /// - The transaction cannot be serialized to a response properly ([`Error::AmountParseFailed`]).
+    /// - A request cannot be successfully built ([`Error::URLBuildFailed`] or [`Error::RequestBuildFailed`])
+    /// - There is a general HTTP failure ([`Error::RequestFailed`])
     pub async fn submit_transaction(
         &self,
         transaction: &Transaction,
@@ -104,11 +104,11 @@ impl Client {
             .http_client
             .execute(request)
             .await
-            .map_err(Error::RequestFailure)?;
+            .map_err(Error::RequestFailed)?;
 
         Self::log_and_error_for_status(response)
             .await
-            .map_err(Error::RequestFailure)?;
+            .map_err(Error::RequestFailed)?;
 
         let amount = transaction.amount();
         let payee = transaction.payee();
@@ -143,18 +143,18 @@ impl Client {
 fn convert_amount_to_ynab_form(amount: &str) -> Result<i32, Error> {
     let pattern = Regex::new(r"^\$?(\d+)\.(\d\d)$").unwrap();
     let captures = pattern.captures(amount).ok_or_else(|| {
-        Error::AmountParseFailure(amount.to_string(), "Amount is malformed".to_string())
+        Error::AmountParseFailed(amount.to_string(), "Amount is malformed".to_string())
     })?;
 
     let get_i32_capture_group = |n| captures.get(n).unwrap().as_str().parse::<i32>();
     let dollars = get_i32_capture_group(1).map_err(|err| {
-        Error::AmountParseFailure(
+        Error::AmountParseFailed(
             amount.to_string(),
             format!("could not parse dollars - {err:?}"),
         )
     })?;
     let cents = get_i32_capture_group(2).map_err(|err| {
-        Error::AmountParseFailure(
+        Error::AmountParseFailed(
             amount.to_string(),
             format!("could not parse cents - {err:?}"),
         )
@@ -166,7 +166,7 @@ fn convert_amount_to_ynab_form(amount: &str) -> Result<i32, Error> {
         .and_then(|total_cents| total_cents.checked_mul(10))
         .and_then(i32::checked_neg)
         .ok_or_else(|| {
-            Error::AmountParseFailure(
+            Error::AmountParseFailed(
                 amount.to_string(),
                 "Overflow occurred during parsing of the transaction amount".to_string(),
             )

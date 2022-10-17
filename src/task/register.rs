@@ -31,13 +31,13 @@ impl<H: Handle> Registry<H> {
         token
     }
 
-    /// Unregister a handle using its task token. Once a task has been unregistered, [`cancel_all`] and
-    /// [`join_all`] will have no effect on this task.
+    /// Unregister a handle using its task token. Once a task has been unregistered, [`Registry::cancel_all`] and
+    /// [`Registry::join_all`] will have no effect on this task.
     pub fn unregister_handle(&mut self, token: TaskToken) {
         self.handles.remove(&token);
     }
 
-    /// Cancel all of the the tasks in this registry. If either [`cancel_all`] or [`join_all`] are
+    /// Cancel all of the the tasks in this registry. If either [`Registry::cancel_all`] or [`Registry::join_all`] are
     /// called after this, the tasks that were currently in the registry will no longer be acted
     /// on. In effect, these tasks are unregistered before cancellation.
     // yes this is technically unused but I don't really care for the warning right now
@@ -49,7 +49,7 @@ impl<H: Handle> Registry<H> {
         }
     }
 
-    /// Join all of the the tasks in this registry. If either [`cancel_all`] or [`join_all`] are
+    /// Join all of the the tasks in this registry. If either [`Registry::cancel_all`] or [`Registry::join_all`] are
     /// called after this, the tasks that were currently in the registry will no longer be acted
     /// on. In effect, these tasks are unregistered before joining.
     ///

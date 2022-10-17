@@ -28,7 +28,7 @@ use thiserror::Error;
 
 mod idle;
 
-/// An error that occurs during the setup process of a [`Watcher`] stream
+/// An error that occurs during the setup process of a stream from [`watch`]
 #[derive(Error, Debug)]
 pub enum WatchError {
     #[error("failed to setup IMAP environment to begin watching: {0}")]
@@ -45,7 +45,12 @@ enum IdleWatchError {
     Disconnected,
 }
 
-pub async fn watch_for_new_messages<S, G>(
+/// Watches the inbox for new emails, yielding their sequence numbers numbers.
+///
+/// # Errors
+/// [`WatchError`] is returned if the stream could not be set up. Note that individual watch
+/// failures are simply logged, rather than bubbled up.
+pub async fn watch<S, G>(
     spawner: &S,
     session_generator: Arc<G>,
 ) -> Result<impl CloseableStream<Item = SequenceNumber>, WatchError>
@@ -181,8 +186,8 @@ async fn watch_for_new_emails<G: SessionGenerator>(
     debug!("Watch finished...");
 }
 
-/// Watch for the arrival of a single email. While the `Watcher` is watching, the caller must relinquish ownership
-/// of the `Session`, but it will be returned to it upon succesful completion
+/// Watch for the arrival of a single email. While watching, the caller must relinquish ownership
+/// of the `Session`, but it will be returned to it upon successful completion
 async fn watch_for_new_emails_until_fail(
     session: IMAPSession,
     sender: &mut UnboundedSender<SequenceNumber>,
