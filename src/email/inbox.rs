@@ -144,6 +144,7 @@ async fn watch_for_new_emails<G: SessionGenerator>(
     // Should always be Some, we just need a container we can move out of.
     let mut current_session = Some(session);
     let shared_stop = stop.shared();
+    info!("Beginning inbox watch...");
     loop {
         // This is always a bug. The only reason that we have to use an optional for current_session
         // is because it is moved out of every loop.
@@ -195,7 +196,6 @@ async fn watch_for_new_emails_until_fail(
 ) -> Result<IMAPSession, IdleWatchError> {
     let mut session_cell = SessionCell::new(session);
 
-    info!("Beginning inbox watch...");
     loop {
         let idle_cell = session_cell.get_idler_cell();
         let maybe_idle_handle = prepare_idler_if_unstopped(idle_cell, stop.clone())
