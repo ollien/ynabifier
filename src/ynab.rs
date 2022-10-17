@@ -88,8 +88,7 @@ impl Client {
 
         let transaction_url = Self::build_transaction_url(budget_id)?;
         debug!(
-            "Sending YNAB request to {} for budget id {} and account id {}",
-            transaction_url, budget_id, account_id
+            "Sending YNAB request to {transaction_url} for budget {budget_id} and account id {account_id}",
         );
 
         let request = self
@@ -111,11 +110,9 @@ impl Client {
             .await
             .map_err(Error::RequestFailure)?;
 
-        info!(
-            "Submitted transaction for {} to {} to YNAB",
-            transaction.amount(),
-            transaction.payee()
-        );
+        let amount = transaction.amount();
+        let payee = transaction.payee();
+        info!("Submitted transaction for {amount} to {payee} to YNAB");
 
         Ok(())
     }
@@ -136,7 +133,7 @@ impl Client {
             Ok(_) => Ok(()),
             Err(err) => {
                 let body = res.text().await?;
-                error!("Got status code {}; response: {}", status_code, body);
+                error!("Got status code {status_code}; response: {body}");
                 Err(err)
             }
         }
@@ -153,13 +150,13 @@ fn convert_amount_to_ynab_form(amount: &str) -> Result<i32, Error> {
     let dollars = get_i32_capture_group(1).map_err(|err| {
         Error::AmountParseFailure(
             amount.to_string(),
-            format!("could not parse dollars - {:?}", err),
+            format!("could not parse dollars - {err:?}"),
         )
     })?;
     let cents = get_i32_capture_group(2).map_err(|err| {
         Error::AmountParseFailure(
             amount.to_string(),
-            format!("could not parse cents - {:?}", err),
+            format!("could not parse cents - {err:?}"),
         )
     })?;
 

@@ -12,7 +12,11 @@ use async_imap::{
     imap_proto::{MailboxDatum, Response},
 };
 use async_trait::async_trait;
-use futures::{channel::mpsc, future::Shared, select, FutureExt, SinkExt, Stream};
+use futures::{
+    channel::mpsc::{self, UnboundedReceiver, UnboundedSender},
+    future::Shared,
+    select, FutureExt, SinkExt, Stream,
+};
 use std::{
     fmt::Debug,
     pin::Pin,
@@ -23,8 +27,6 @@ use stop_token::{StopSource, StopToken};
 use thiserror::Error;
 
 mod idle;
-
-const CHANNEL_SIZE: usize = 16;
 
 /// An error that occurs during the setup process of a [`Watcher`] stream
 #[derive(Error, Debug)]
@@ -52,7 +54,7 @@ where
     S::Handle: Unpin,
     G: SessionGenerator + Sync + Send + 'static,
 {
-    let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
+    let (tx, rx) = mpsc::unbounded();
 
     let mut session = session_generator
         .new_session()
@@ -83,14 +85,14 @@ where
 }
 
 struct SequenceNumberStream<H: Unpin + Send> {
-    output_stream: mpsc::Receiver<SequenceNumber>,
+    output_stream: UnboundedReceiver<SequenceNumber>,
     stop_src: StopSource,
     handle: H,
 }
 
 impl<H: Unpin + Send> SequenceNumberStream<H> {
     pub fn new(
-        output_stream: mpsc::Receiver<SequenceNumber>,
+        output_stream: UnboundedReceiver<SequenceNumber>,
         stop_src: StopSource,
         handle: H,
     ) -> Self {
@@ -123,7 +125,7 @@ impl<H: Unpin + task::Handle + Send> CloseableStream for SequenceNumberStream<H>
         // If we fail to join, the resources are as cleaned up as we're going to get them. Bubbling this up
         // is kinda tricky, and honestly, is only going to happen if the tasks got killed for some reason.
         if let Err(err) = handle.join().await {
-            error!("Failed to join with join task: {:?}", err);
+            error!("Failed to join with join task: {err:?}");
         }
     }
 }
@@ -132,7 +134,7 @@ async fn watch_for_new_emails<G: SessionGenerator>(
     session: IMAPSession,
     session_generator: Arc<G>,
     stop: StopToken,
-    sender: &mut mpsc::Sender<SequenceNumber>,
+    sender: &mut UnboundedSender<SequenceNumber>,
 ) {
     // Should always be Some, we just need a container we can move out of.
     let mut current_session = Some(session);
@@ -156,7 +158,7 @@ async fn watch_for_new_emails<G: SessionGenerator>(
                 }
             }
             Err(err) => {
-                error!("failed to watch for new emails: {}", err);
+                error!("Failed to watch for new emails: {err}");
                 let maybe_session =
                     get_session_with_retry(session_generator.as_ref(), shared_stop.clone()).await;
                 match maybe_session {
@@ -183,11 +185,12 @@ async fn watch_for_new_emails<G: SessionGenerator>(
 /// of the `Session`, but it will be returned to it upon succesful completion
 async fn watch_for_new_emails_until_fail(
     session: IMAPSession,
-    sender: &mut mpsc::Sender<SequenceNumber>,
+    sender: &mut UnboundedSender<SequenceNumber>,
     stop: Shared<StopToken>,
 ) -> Result<IMAPSession, IdleWatchError> {
     let mut session_cell = SessionCell::new(session);
 
+    info!("Beginning inbox watch...");
     loop {
         let idle_cell = session_cell.get_idler_cell();
         let maybe_idle_handle = prepare_idler_if_unstopped(idle_cell, stop.clone())
@@ -204,12 +207,11 @@ async fn watch_for_new_emails_until_fail(
             _ = stop.clone().fuse()  => break,
             sequence_number_res = idle_for_email(idle_handle).fuse() => {
                 let sequence_number = sequence_number_res?;
-                debug!("Idle received email with sequence number {}, sending to stream...", sequence_number);
+                debug!("Idle received email with sequence number {sequence_number}, sending to stream...");
                 let send_res = sender.send(sequence_number).await;
                 if let Err(err) = send_res {
                     error!(
-                        "Successfully fetched, but failed to dispatch email with sequence number {}: {}",
-                        sequence_number, err
+                        "Successfully fetched, but failed to dispatch email with sequence number {sequence_number}: {err}",
                     );
                 } else {
                     debug!("Message sent");
@@ -256,7 +258,7 @@ async fn idle_for_email(
                 match maybe_sequence_number {
                     Some(sequence_number) => return Ok(sequence_number),
                     None => {
-                        debug!("re-waiting for IDLE after getting non-EXISTS response from IDLE command: {:?}", response);
+                        debug!("Re-waiting for IDLE after getting non-EXISTS response from IDLE command: {response:?}");
                     }
                 }
             }
@@ -281,7 +283,7 @@ async fn get_session_with_retry<G: SessionGenerator>(
     let mut attempts = 1;
     let mut fused_stop = stop.fuse();
     loop {
-        info!("generating a new session...");
+        debug!("Generating a new session...");
         let session_future = get_session(session_generator);
         select! {
             _ = fused_stop => break,
@@ -289,7 +291,7 @@ async fn get_session_with_retry<G: SessionGenerator>(
                 match new_session_res {
                     Ok(new_session) => return Some(new_session),
                     Err(err) => {
-                        error!("failed to get new session on attempt {}: {}", attempts, err);
+                        error!("failed to get new session on attempt {attempts}: {err}");
                         attempts += 1;
                     }
                 }

@@ -107,10 +107,10 @@ async fn generate_fetchable_session<G: SessionGenerator>(
 }
 
 async fn best_effort_logout(session: &mut IMAPSession) {
-    debug!("logging out after fetch");
+    debug!("Logging out after fetch");
 
     let logout_res = session.logout().await;
     if let Err(err) = logout_res {
-        error!("failed to best-effort tear down session: {}", err);
+        error!("Failed to best-effort tear down session: {err}");
     }
 }

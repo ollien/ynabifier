@@ -21,8 +21,6 @@ use email::{
 use futures::Stream;
 use task::{Join, Spawn, SpawnError};
 
-const CHANNEL_SIZE: usize = 16;
-
 pub mod config;
 mod email;
 pub mod parse;
@@ -86,8 +84,7 @@ where
 
     let stop_source = StopSource::new();
     let fetcher = RawFetcher::new(session_generator_arc);
-    let fetch_stream =
-        email::stream_incoming_messages(spawner, watcher, fetcher, stop_source).await?;
+    let fetch_stream = email::stream_incoming_messages(spawner, watcher, fetcher, stop_source)?;
 
     Ok(fetch_stream)
 }

@@ -24,7 +24,7 @@ impl TransactionEmailParser for EmailParser {
     fn parse_transaction_email(&self, msg: &Message) -> Result<Transaction, super::Error> {
         let parsed_mail = msg
             .parsed()
-            .map_err(|err| super::Error(format!("message could not be parsed {:?}", err)))?;
+            .map_err(|err| super::Error(format!("message could not be parsed {err:?}")))?;
 
         if !super::has_correct_sender(&parsed_mail, "\"Citi Alerts\" <alerts@info6.citi.com>") {
             return Err(super::Error("message has incorrect sender".to_string()));
@@ -33,7 +33,7 @@ impl TransactionEmailParser for EmailParser {
         let html_part = super::find_html_subpart(&parsed_mail)?;
         let html_contents = html_part
             .get_body()
-            .map_err(|err| super::Error(format!("failed to find html body: {:?}", err)))?;
+            .map_err(|err| super::Error(format!("failed to find html body: {err:?}")))?;
 
         // If these are malformed it's programmer error
         let table_selector = Selector::parse("table[role=\"presentation\"]")
@@ -75,7 +75,7 @@ where
         .ok_or_else(|| super::Error("failed to find date in html body".to_string()))?;
 
     NaiveDate::parse_from_str(dbg!(date_text), "%m/%d/%Y")
-        .map_err(|err| super::Error(format!("failed to parse date from html body: {:?}", err)))
+        .map_err(|err| super::Error(format!("failed to parse date from html body: {err:?}")))
 }
 
 fn find_table_value_with_label<'a, I, F>(table_text_iter: I, mut find_func: F) -> Option<&'a str>

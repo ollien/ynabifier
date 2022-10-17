@@ -40,6 +40,8 @@ impl<H: Handle> Registry<H> {
     /// Cancel all of the the tasks in this registry. If either [`cancel_all`] or [`join_all`] are
     /// called after this, the tasks that were currently in the registry will no longer be acted
     /// on. In effect, these tasks are unregistered before cancellation.
+    // yes this is technically unused but I don't really care for the warning right now
+    #[allow(dead_code)]
     pub fn cancel_all(&mut self) {
         let handles = mem::take(&mut self.handles);
         for handle in handles.into_values() {

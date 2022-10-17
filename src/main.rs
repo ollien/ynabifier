@@ -21,18 +21,18 @@ use ynabifier::{
 fn main() {
     let config_res = load_config("config.yml");
     if let Err(err) = config_res {
-        eprintln!("Failed to load configuration: {}", err);
+        eprintln!("Failed to load configuration: {err}");
         process::exit(1);
     }
 
     let config = config_res.unwrap();
     if let Err(err) = setup_logger(config.log_level()) {
-        eprintln!("Failed to setup logger: {}", err);
+        eprintln!("Failed to setup logger: {err}");
         process::exit(1);
     }
 
     if let Err(err) = listen_for_transactions(&config) {
-        error!("Failed to listen for transaction emails: {}", err);
+        error!("Failed to listen for transaction emails: {err}");
         process::exit(2);
     }
 }
@@ -79,12 +79,10 @@ fn listen_for_transactions(config: &Config) -> Result<(), anyhow::Error> {
                     }
                     let msg = maybe_msg.unwrap();
                     if let Some((account, transaction)) = try_parse_email(accounts.iter(), &msg) {
-                        info!(
-                            "Parsed transaction for {} to {} with parser {}",
-                            transaction.amount(),
-                            transaction.payee(),
-                            account.parser_name(),
-                        );
+                        let amount = transaction.amount();
+                        let payee = transaction.payee();
+                        let parser_name = account.parser_name();
+                        info!("Parsed transaction for {amount} to {payee} with parser {parser_name}");
                         submit_transaction(
                             &ynab_client,
                             &transaction,
@@ -116,7 +114,7 @@ where
         match account.parser().parse_transaction_email(msg) {
             Ok(transaction) => return Some((account, transaction)),
             Err(err) => debug!(
-                "failed to parse message with parser '{}': {:?}",
+                "Failed to parse message with parser '{}': {:?}",
                 account.parser_name(),
                 err
             ),
@@ -136,7 +134,7 @@ async fn submit_transaction(
         .submit_transaction(transaction, budget_id, account_id)
         .await
     {
-        error!("Failed to submit transaction: {}", err);
+        error!("Failed to submit transaction: {err}");
     }
 }
 

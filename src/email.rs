@@ -1,6 +1,6 @@
 use futures::{
     channel::{
-        mpsc::{self, Receiver},
+        mpsc::{self, UnboundedReceiver},
         oneshot,
     },
     lock::Mutex,
@@ -19,7 +19,7 @@ use thiserror::Error;
 
 use crate::{
     task::{self, Join, Registry, ResolveOrStop, Spawn, SpawnError},
-    CloseableStream, CHANNEL_SIZE,
+    CloseableStream,
 };
 
 use async_trait::async_trait;
@@ -89,7 +89,7 @@ pub enum StreamSetupError {
 
 /// `MessageStream` is a stream of any messages returned from `stream_incoming_messages`.
 pub struct MessageStream<H> {
-    output_stream: Receiver<Message>,
+    output_stream: UnboundedReceiver<Message>,
     sink_stop_source: StopSource,
     stream_task_handle: H,
 }
@@ -129,7 +129,7 @@ impl<H: task::Handle + Send + Unpin> CloseableStream for MessageStream<H> {
         // If we fail to join, the resources are as cleaned up as we're going to get them. Bubbling this up
         // is kinda tricky, and honestly, is only going to happen if the tasks got killed for some reason.
         if let Err(err) = stream_task_handle.join().await {
-            error!("Failed to join with sequence number stream: {:?}", err);
+            error!("Failed to join with sequence number stream: {err:?}");
         }
     }
 }
@@ -154,7 +154,7 @@ where
 /// If the stream cannot be set up (i.e. because the underlying task could not be set up for any reason), then it is
 /// returned.
 // TODO: Does this need to use StreamSetupError? It's an enum with one variant...
-pub async fn stream_incoming_messages<M, F, S>(
+pub fn stream_incoming_messages<M, F, S>(
     spawn: Arc<S>,
     sequence_number_stream: M,
     fetcher: F,
@@ -168,7 +168,7 @@ where
     S::Handle: 'static,
     <<S as Spawn>::Handle as Join>::Error: Send,
 {
-    let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
+    let (tx, rx) = mpsc::unbounded();
 
     let spawn_clone = spawn.clone();
     let stop_token = stop_source.token();
@@ -238,9 +238,9 @@ async fn stream_incoming_messages_to_sink<S, N, F, O>(
 
             match fetch_res {
                 Ok(_) => {}
-                Err(StreamError::FetchFailed(err)) => error!("failed to fetch message: {:?}", err),
+                Err(StreamError::FetchFailed(err)) => error!("Failed to fetch message: {err}"),
                 Err(StreamError::SinkFailed(err)) => {
-                    error!("failed to send fetched message to output sink: {:?}", err);
+                    error!("Failed to send fetched message to output sink: {err:?}");
                 }
             }
         };
@@ -273,7 +273,7 @@ async fn stream_incoming_messages_to_sink<S, N, F, O>(
             }
             Err(spawn_err) => {
                 error!(
-                    "failed to spawn task to fetch sequence number {sequence_number}: {spawn_err:?}"
+                    "Failed to spawn task to fetch sequence number {sequence_number}: {spawn_err:?}"
                 );
             }
         }
@@ -282,7 +282,7 @@ async fn stream_incoming_messages_to_sink<S, N, F, O>(
     sequence_number_stream.close().await;
     debug!("Joining all remaining fetch tasks...");
     if let Err(err) = task_registry.lock().await.join_all().await {
-        error!("failed to join all fetch tasks: {:?}", err);
+        error!("Failed to join all fetch tasks: {err:?}");
     };
 }
 
@@ -370,9 +370,10 @@ mod tests {
             sequence_number: SequenceNumber,
             _stop_token: &mut StopToken,
         ) -> Result<Message, Self::Error> {
-            self.messages.get(&sequence_number).cloned().ok_or_else(|| {
-                StringError(format!("sequence number {:?} not found", sequence_number))
-            })
+            self.messages
+                .get(&sequence_number)
+                .cloned()
+                .ok_or_else(|| StringError(format!("sequence number {sequence_number} not found")))
         }
     }
 
@@ -421,7 +422,6 @@ mod tests {
             mock_fetcher,
             StopSource::new(),
         )
-        .await
         .expect("failed to setup stream");
 
         select! {
@@ -445,7 +445,6 @@ mod tests {
             MockMessageFetcher::new(),
             StopSource::new(),
         )
-        .await
         .expect("failed to setup stream");
 
         message_stream.close().await;

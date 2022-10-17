@@ -30,7 +30,7 @@ impl TransactionEmailParser for EmailParser {
     fn parse_transaction_email(&self, msg: &Message) -> Result<Transaction, super::Error> {
         let parsed_mail = msg
             .parsed()
-            .map_err(|err| super::Error(format!("message could not be parsed {:?}", err)))?;
+            .map_err(|err| super::Error(format!("message could not be parsed {err:?}")))?;
 
         if !super::has_correct_sender(&parsed_mail, "alerts@td.com") {
             return Err(super::Error("message has incorrect sender".to_string()));
@@ -39,7 +39,7 @@ impl TransactionEmailParser for EmailParser {
         let html_part = super::find_html_subpart(&parsed_mail)?;
         let html_contents = html_part
             .get_body()
-            .map_err(|err| super::Error(format!("failed to find html body: {:?}", err)))?;
+            .map_err(|err| super::Error(format!("failed to find html body: {err:?}")))?;
 
         let html_document = Html::parse_document(&html_contents);
         let date = extract_date(&html_document)?;
@@ -79,7 +79,7 @@ fn extract_date(email_html: &Html) -> Result<NaiveDate, super::Error> {
     let date_text = &date_line[date_text_match.start()..date_text_match.end()];
 
     NaiveDate::parse_from_str(date_text, "%F")
-        .map_err(|err| super::Error(format!("failed to parse date from email: {:?}", err)))
+        .map_err(|err| super::Error(format!("failed to parse date from email: {err:?}")))
 }
 
 fn extract_undated_info(email_html: &Html) -> Result<UndatedTransaction, super::Error> {
