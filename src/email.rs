@@ -324,13 +324,13 @@ mod tests {
     use crate::testutil::TokioSpawner;
 
     use super::*;
+    use futures::stream;
     use futures::{
         channel::oneshot::{self, Sender},
-        select, StreamExt,
+        StreamExt,
     };
-    use futures::{stream, FutureExt};
-    use futures_timer::Delay;
     use thiserror::Error;
+    use tokio::time;
 
     #[derive(Error, Debug)]
     struct StringError(String);
@@ -424,13 +424,13 @@ mod tests {
         )
         .expect("failed to setup stream");
 
-        select! {
-            msg = broker_handle.next().fuse() => assert_eq!(
-                "hello, world!".bytes().collect::<Vec<u8>>(),
-                msg.expect("empty channel").raw(),
-            ),
-            _ = Delay::new(Duration::from_secs(5)).fuse() => panic!("test timed out"),
-        };
+        let msg = time::timeout(Duration::from_secs(5), broker_handle.next())
+            .await
+            .expect("test timed out");
+        assert_eq!(
+            "hello, world!".bytes().collect::<Vec<u8>>(),
+            msg.expect("empty channel").raw(),
+        );
     }
 
     #[tokio::test]
@@ -449,9 +449,10 @@ mod tests {
 
         message_stream.close().await;
 
-        select! {
-            res = rx.fuse() => assert!(res.is_ok(), "did not get close signal"),
-            _ = Delay::new(Duration::from_secs(5)).fuse() => panic!("test timed out"),
-        };
+        let rx_res = time::timeout(Duration::from_secs(5), rx)
+            .await
+            .expect("test timed out");
+
+        rx_res.expect("did not get close signal");
     }
 }

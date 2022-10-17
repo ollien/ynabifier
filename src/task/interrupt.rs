@@ -30,6 +30,7 @@ mod tests {
 
     use super::*;
     use stop_token::StopSource;
+    use tokio::time;
 
     #[tokio::test]
     async fn test_resolves_future_if_unstopped() {
@@ -43,7 +44,7 @@ mod tests {
     async fn test_gives_none_if_stopped() {
         // We must artificially limit how long this future takes to resolve,
         // as it is random which future resolves by select! if two are ready.
-        let fut = tokio::time::sleep(Duration::from_secs(5));
+        let fut = time::sleep(Duration::from_secs(5));
         let stop_source = StopSource::new();
         let mut stop_token = stop_source.token();
 
