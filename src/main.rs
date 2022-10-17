@@ -1,3 +1,5 @@
+#![warn(clippy::all, clippy::pedantic)]
+
 #[macro_use]
 extern crate log;
 
@@ -61,7 +63,7 @@ fn setup_logger(log_level: LevelFilter) -> Result<(), fern::InitError> {
                 record.level(),
                 record.target(),
                 message
-            ))
+            ));
         })
         .level(LevelFilter::Error)
         .level_for("ynabifier", log_level)
