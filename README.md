@@ -17,7 +17,7 @@ YNABifier, while functional, is still a bit of a work in progress. There are som
 Planned improvements:
  - [ ] Streamline the configuration process to not require fetching YNAB IDs by hand.
  - [x] IMAP sessions need to be more properly cleaned up.
- - [ ] Various QoL features, such as allowing alternate configuration paths
+ - [x] Various QoL features, such as allowing alternate configuration paths
 
 ## Setup
 

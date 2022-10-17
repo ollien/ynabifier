@@ -2,6 +2,7 @@
 extern crate log;
 
 use async_trait::async_trait;
+use clap::Parser;
 use futures::{select, FutureExt};
 use futures::{stream::StreamExt, Future};
 use log::LevelFilter;
@@ -10,16 +11,24 @@ use ynabifier::task::{Handle, Join};
 
 use std::{fs::File, process, sync::Arc};
 use tokio::runtime::Runtime;
-use ynabifier::parse::Transaction;
 use ynabifier::{
     config::{Config, YNABAccount},
+    parse::Transaction,
     task::{Cancel, Spawn, SpawnError},
     ynab::Client as YNABClient,
     CloseableStream, Message,
 };
 
+#[derive(Parser, Debug)]
+struct Args {
+    #[arg(short, default_value = "config.yml")]
+    config_file: String,
+}
+
 fn main() {
-    let config_res = load_config("config.yml");
+    let args = Args::parse();
+
+    let config_res = load_config(&args.config_file);
     if let Err(err) = config_res {
         eprintln!("Failed to load configuration: {err}");
         process::exit(1);
