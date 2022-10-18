@@ -1,6 +1,6 @@
 //! The inbox module holds implementations to allow for the monitoring of a real inbox
 
-use self::idle::{Idler, IdlerCell, SessionCell, SessionState};
+use self::idle::{SessionCell, SessionState};
 use super::{login::SessionGenerator, SequenceNumber};
 use crate::{
     email::inbox::reconnect::Delay,
@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use futures::{
     channel::mpsc::{self, UnboundedReceiver, UnboundedSender},
     future::Shared,
-    select, FutureExt, SinkExt, Stream,
+    FutureExt, SinkExt, Stream,
 };
 use std::{
     fmt::Debug,
@@ -137,6 +137,8 @@ impl<H: Unpin + task::Handle + Send> CloseableStream for SequenceNumberStream<H>
     }
 }
 
+/// Watch for new emails in the given [`IMAPSession`]. All sequence numbers will be sent to the given `sender`.
+/// When the [`IMAPSession`] times out, a new session will be generate from the given `SessionGenerator`.
 async fn watch_for_new_emails<G: SessionGenerator + Sync>(
     session: IMAPSession,
     session_generator: Arc<G>,
@@ -155,7 +157,7 @@ async fn watch_for_new_emails<G: SessionGenerator + Sync>(
             .expect("Lost track of the current session, can't continue");
 
         let session_res =
-            watch_for_new_emails_until_fail(session, sender, shared_stop.clone()).await;
+            watch_session_for_new_emails_until_fail(session, sender, shared_stop.clone()).await;
 
         match session_res {
             Ok(session) => {
@@ -190,46 +192,17 @@ async fn watch_for_new_emails<G: SessionGenerator + Sync>(
     debug!("Watch finished...");
 }
 
-/// Watch for the arrival of a single email. While watching, the caller must relinquish ownership
-/// of the `Session`, but it will be returned to it upon successful completion
-async fn watch_for_new_emails_until_fail(
+/// Watch for the arrival of as many emails as possible before a failure occurs. While watching, the caller must
+/// relinquish ownership of the `Session`, but it will be returned to it upon successful completion
+async fn watch_session_for_new_emails_until_fail(
     session: IMAPSession,
     sender: &mut UnboundedSender<SequenceNumber>,
     stop: Shared<StopToken>,
 ) -> Result<IMAPSession, IdleWatchError> {
     let mut session_cell = SessionCell::new(session);
-
-    loop {
-        let idle_cell = session_cell.get_idler_cell();
-        let maybe_idle_handle = prepare_idler_if_unstopped(idle_cell, stop.clone())
-            .await
-            .map_err(IdleWatchError::IMAPError)?;
-
-        if maybe_idle_handle.is_none() {
-            break;
-        }
-
-        let idle_handle = maybe_idle_handle.unwrap();
-        debug!("Idling for new emails...");
-        select! {
-            _ = stop.clone().fuse()  => break,
-            sequence_number_res = idle_for_email(idle_handle).fuse() => {
-                let sequence_number = sequence_number_res?;
-                debug!("Idle received email with sequence number {sequence_number}, sending to stream...");
-                let send_res = sender.send(sequence_number).await;
-                if let Err(err) = send_res {
-                    error!(
-                        "Successfully fetched, but failed to dispatch email with sequence number {sequence_number}: {err}",
-                    );
-                } else {
-                    debug!("Message sent");
-                }
-            }
-        }
-    }
+    watch_session_cell_for_new_emails_until_fail(&mut session_cell, sender, stop).await?;
 
     debug!("Done watching, reclaiming session...");
-
     match session_cell.into_state() {
         // If we've only initialized the cell, we don't need to actually do anything...
         SessionState::Initialized(session) => Ok(session),
@@ -242,17 +215,55 @@ async fn watch_for_new_emails_until_fail(
     }
 }
 
-async fn prepare_idler_if_unstopped<I: Idler + Unpin>(
-    idler_cell: &mut IdlerCell<I>,
+/// Watch for the arrival of as many emails as possible before a failure occurs.
+async fn watch_session_cell_for_new_emails_until_fail(
+    session_cell: &mut SessionCell<IMAPSession, IMAPIdleHandle<IMAPTransportStream>>,
+    sender: &mut UnboundedSender<SequenceNumber>,
     stop: Shared<StopToken>,
-) -> IMAPResult<Option<&mut I>> {
-    select! {
-        // TODO: an Option is a bit semantically weird but it works for this purpose...
-        _ = stop.fuse() => Ok(None),
-        idle_handle_res = idler_cell.prepare().fuse() => idle_handle_res.map(Some)
+) -> Result<(), IdleWatchError> {
+    loop {
+        let idler_cell = session_cell.get_idler_cell();
+        let maybe_idle_handle = idler_cell
+            .prepare()
+            .resolve_or_stop(stop.clone())
+            .await
+            .transpose()
+            .map_err(IdleWatchError::IMAPError)?;
+
+        if maybe_idle_handle.is_none() {
+            return Ok(());
+        }
+
+        let idle_handle = maybe_idle_handle.unwrap();
+        debug!("Idling for new emails...");
+        let maybe_sequence_number_res = idle_for_email(idle_handle)
+            .resolve_or_stop(stop.clone())
+            .await;
+
+        match maybe_sequence_number_res {
+            None => return Ok(()),
+            Some(Err(err)) => return Err(err),
+            Some(Ok(sequence_number)) => {
+                debug!("Idle received email with sequence number {sequence_number}, sending to stream...");
+                let send_res = sender.send(sequence_number).await;
+                if let Err(err) = send_res {
+                    error!(
+                        "Successfully fetched, but failed to dispatch email with sequence number {sequence_number}: {err}",
+                    );
+                } else {
+                    debug!("Message sent");
+                }
+            }
+        }
     }
 }
 
+/// Idle for a single email, returning that message's sequence number.
+///
+/// # Errors
+/// This can fail in one of two ways:
+/// - A general IMAP failure that occurred during the idle process
+/// - A timeout/disconnect, which happens roughly every 29 minutes per RFC 2177.
 async fn idle_for_email(
     idle_handle: &mut IMAPIdleHandle<IMAPTransportStream>,
 ) -> Result<SequenceNumber, IdleWatchError> {
