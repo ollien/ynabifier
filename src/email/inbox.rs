@@ -4,7 +4,7 @@ use self::idle::{SessionCell, SessionState};
 use super::{login::SessionGenerator, SequenceNumber};
 use crate::{
     email::inbox::reconnect::Delay,
-    task::{self, ResolveOrStop, Spawn, SpawnError},
+    task::{self, ResolveOrStop, Spawn, SpawnError, StopResolution},
     CloseableStream, IMAPSession, IMAPTransportStream,
 };
 use async_imap::{
@@ -227,10 +227,10 @@ async fn watch_session_cell_for_new_emails_until_fail(
             .prepare()
             .resolve_or_stop(stop.clone())
             .await
-            .transpose()
+            .transpose_result()
             .map_err(IdleWatchError::IMAPError)?;
 
-        if maybe_idle_handle.is_none() {
+        if maybe_idle_handle.was_stopped() {
             return Ok(());
         }
 
@@ -241,9 +241,9 @@ async fn watch_session_cell_for_new_emails_until_fail(
             .await;
 
         match maybe_sequence_number_res {
-            None => return Ok(()),
-            Some(Err(err)) => return Err(err),
-            Some(Ok(sequence_number)) => {
+            StopResolution::Stopped => return Ok(()),
+            StopResolution::Resolved(Err(err)) => return Err(err),
+            StopResolution::Resolved(Ok(sequence_number)) => {
                 debug!("Idle received email with sequence number {sequence_number}, sending to stream...");
                 let send_res = sender.send(sequence_number).await;
                 if let Err(err) = send_res {
@@ -306,7 +306,8 @@ async fn get_session_with_retry<G: SessionGenerator + Sync>(
         debug!("Generating a new session...");
         let session_res = get_session(session_generator)
             .resolve_or_stop(stop.clone())
-            .await?;
+            .await
+            .into_option()?;
 
         match session_res {
             Ok(new_session) => return Some(new_session),
@@ -318,7 +319,11 @@ async fn get_session_with_retry<G: SessionGenerator + Sync>(
                     delay.peek_delay().as_secs()
                 );
 
-                delay.backoff_wait().resolve_or_stop(stop.clone()).await?;
+                delay
+                    .backoff_wait()
+                    .resolve_or_stop(stop.clone())
+                    .await
+                    .into_option()?;
             }
         }
     }

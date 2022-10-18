@@ -217,6 +217,7 @@ async fn stream_incoming_messages_to_sink<S, N, F, O>(
         .next()
         .resolve_or_stop(&mut *stop_token)
         .await
+        .into_option()
         .flatten()
     {
         let fetcher_arc_clone = fetcher_arc.clone();

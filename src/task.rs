@@ -1,13 +1,13 @@
 use async_trait::async_trait;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-pub(crate) use {interrupt::ResolveOrStop, register::Registry};
+pub(crate) use {register::Registry, stop::Resolution as StopResolution, stop::ResolveOrStop};
 
 use futures::Future;
 use thiserror::Error;
 
-mod interrupt;
 mod register;
+mod stop;
 
 /// `SpawnError` describes why a spawn may have failed to occur.
 #[derive(Error, Debug)]

@@ -1,7 +1,7 @@
 use crate::{task::ResolveOrStop, IMAPSession, Message, SessionGenerator};
 use std::sync::Arc;
 
-use super::{MessageFetcher, SequenceNumber};
+use super::{task::StopResolution, MessageFetcher, SequenceNumber};
 use async_imap::{error::Error as IMAPError, types::Fetch};
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -51,6 +51,7 @@ where
         let mut session = generate_fetchable_session(session_gen)
             .resolve_or_stop(&mut *stop_token)
             .await
+            .into_option()
             .ok_or(FetchError::Stopped)?
             .map_err(FetchError::IMAPSetupFailed)?;
 
@@ -60,9 +61,9 @@ where
                 .await;
 
             match msg_fetch_result {
-                None => Err(FetchError::Stopped),
-                Some(Err(err)) => Err(err),
-                Some(Ok(message)) => message
+                StopResolution::Stopped => Err(FetchError::Stopped),
+                StopResolution::Resolved(Err(err)) => Err(err),
+                StopResolution::Resolved(Ok(message)) => message
                     .body()
                     .ok_or(FetchError::NoBody(sequence_number))
                     .map(<[u8]>::to_vec),
