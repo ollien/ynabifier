@@ -158,7 +158,6 @@ pub fn stream_incoming_messages<M, F, S>(
     spawn: Arc<S>,
     sequence_number_stream: M,
     fetcher: F,
-    stop_source: StopSource,
 ) -> Result<MessageStream<S::Handle>, StreamSetupError>
 where
     M: CloseableStream<Item = SequenceNumber> + Send + Unpin + 'static,
@@ -171,6 +170,7 @@ where
     let (tx, rx) = mpsc::unbounded();
 
     let spawn_clone = spawn.clone();
+    let stop_source = StopSource::new();
     let stop_token = stop_source.token();
     let stream_handle = spawn_clone
         .spawn(async move {
@@ -416,13 +416,9 @@ mod tests {
 
         mock_fetcher.stage_message(SequenceNumber(123), "hello, world!");
 
-        let mut message_stream = stream_incoming_messages(
-            Arc::new(TokioSpawner),
-            sequence_number_stream,
-            mock_fetcher,
-            StopSource::new(),
-        )
-        .expect("failed to setup stream");
+        let mut message_stream =
+            stream_incoming_messages(Arc::new(TokioSpawner), sequence_number_stream, mock_fetcher)
+                .expect("failed to setup stream");
 
         let msg = time::timeout(Duration::from_secs(5), message_stream.next())
             .await
@@ -443,7 +439,6 @@ mod tests {
             Arc::new(TokioSpawner),
             sequence_number_stream,
             MockMessageFetcher::new(),
-            StopSource::new(),
         )
         .expect("failed to setup stream");
 

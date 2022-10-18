@@ -6,12 +6,11 @@ extern crate log;
 use std::sync::Arc;
 
 pub use async_imap::error::Error as IMAPError;
-pub use email::Message;
+pub use email::{inbox, Message};
 
 use async_native_tls::TlsStream;
 use async_std::net::TcpStream;
 use async_trait::async_trait;
-use stop_token::StopSource;
 use thiserror::Error;
 
 use email::{
@@ -78,18 +77,15 @@ where
     <<S as Spawn>::Handle as Join>::Error: Send,
 {
     let session_generator_arc = Arc::new(ConfigSessionGenerator::new(imap_config.clone()));
-    let sequence_number_stream =
-        email::inbox::watch(spawner.as_ref(), session_generator_arc.clone())
-            .await
-            .map_err(|err| match err {
-                WatchError::SpawnError(err) => StreamSetupError::SpawnFailed(err),
-                WatchError::IMAPSetupError(err) => StreamSetupError::WatchFailed(err),
-            })?;
+    let sequence_number_stream = inbox::watch(spawner.as_ref(), session_generator_arc.clone())
+        .await
+        .map_err(|err| match err {
+            WatchError::SpawnError(err) => StreamSetupError::SpawnFailed(err),
+            WatchError::IMAPSetupError(err) => StreamSetupError::WatchFailed(err),
+        })?;
 
-    let stop_source = StopSource::new();
     let fetcher = RawFetcher::new(session_generator_arc);
-    let fetch_stream =
-        email::stream_incoming_messages(spawner, sequence_number_stream, fetcher, stop_source)?;
+    let fetch_stream = email::stream_incoming_messages(spawner, sequence_number_stream, fetcher)?;
 
     Ok(fetch_stream)
 }
