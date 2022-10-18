@@ -215,7 +215,7 @@ async fn stream_incoming_messages_to_sink<S, N, F, O>(
     let task_registry = Arc::new(Mutex::new(Registry::new()));
     while let Some(sequence_number) = sequence_number_stream
         .next()
-        .resolve_or_stop(stop_token)
+        .resolve_or_stop(&mut *stop_token)
         .await
         .flatten()
     {

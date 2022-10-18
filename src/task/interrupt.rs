@@ -1,25 +1,24 @@
 use async_trait::async_trait;
 use futures::{select, Future, FutureExt};
-use stop_token::StopToken;
 
 /// ResolveOrStop allows futures to be resolved, or stopped mid-resolution.
 #[async_trait]
 pub trait ResolveOrStop {
     type Output;
 
-    /// Returns the future's output if it resolves, or `None` if the StopToken resolves first.
-    async fn resolve_or_stop(self, stop_token: &mut StopToken) -> Option<Self::Output>;
+    /// Returns the future's output if it resolves, or `None` if the given stop future resolves first.
+    /// This stop future can be something like a `StopToken`.
+    async fn resolve_or_stop<S: Future + Send>(self, stop_future: S) -> Option<Self::Output>;
 }
 
 #[async_trait]
-// The Send bound is necessary due to the + Send bound `async_trait` provides on the return type.
 impl<F: Future + Send> ResolveOrStop for F {
     type Output = F::Output;
 
-    async fn resolve_or_stop(self, stop_token: &mut StopToken) -> Option<Self::Output> {
+    async fn resolve_or_stop<S: Future + Send>(self, stop_future: S) -> Option<Self::Output> {
         select! {
             res = self.fuse() => Some(res),
-            _ = stop_token.fuse() => None
+            _ = stop_future.fuse() => None
         }
     }
 }

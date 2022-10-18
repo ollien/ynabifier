@@ -49,14 +49,14 @@ where
     ) -> Result<Message, Self::Error> {
         let session_gen = self.session_generator.as_ref();
         let mut session = generate_fetchable_session(session_gen)
-            .resolve_or_stop(stop_token)
+            .resolve_or_stop(&mut *stop_token)
             .await
             .ok_or(FetchError::Stopped)?
             .map_err(FetchError::IMAPSetupFailed)?;
 
         let body_res = {
             let msg_fetch_result = get_message_from_session(sequence_number, &mut session)
-                .resolve_or_stop(stop_token)
+                .resolve_or_stop(&mut *stop_token)
                 .await;
 
             match msg_fetch_result {
