@@ -1,9 +1,13 @@
+pub use build::{Builder, Error as BuildError};
 use log::LevelFilter;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use strum::{EnumIter, IntoStaticStr};
 
 use crate::parse::{CitiEmailParser, TDEmailParser, TransactionEmailParser};
 
-#[derive(Clone, Debug, Deserialize)]
+mod build;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 enum LogLevel {
     #[serde(rename = "debug")]
@@ -16,16 +20,16 @@ enum LogLevel {
     Error,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, EnumIter, IntoStaticStr)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
-enum Parser {
+pub enum Parser {
     #[serde(rename = "td")]
     TD,
     #[serde(rename = "citi")]
     Citi,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct Config {
     #[serde(default = "defaults::log_level")]
@@ -34,7 +38,7 @@ pub struct Config {
     ynab: YNAB,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct IMAP {
     domain: String,
@@ -45,7 +49,7 @@ pub struct IMAP {
     // unfortunately, we can't configure tls because async_imap requires it
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct YNAB {
     personal_access_token: String,
@@ -53,7 +57,7 @@ pub struct YNAB {
     accounts: Vec<YNABAccount>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct YNABAccount {
     #[serde(rename = "account_id")]

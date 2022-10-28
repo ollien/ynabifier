@@ -2,14 +2,14 @@
 name = "ynabifier"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+default-run = "ynabifier"
 
 [dependencies]
 anyhow = "1.0"
 async-imap = "0.6.0"
 async-trait = "0.1.53"
 clap = { version = "4.0", features = ["derive"] }
+colored = "2.0"
 chrono = "0.4.22"
 derive-getters = "0.2.0"
 log = "0.4.17"
@@ -18,11 +18,13 @@ itertools = "0.10.4"
 mailparse = "0.13.8"
 scraper = "0.13.0"
 regex = "1.6"
-reqwest = { version = "0.11.12", features = ["json"] }
+reqwest = { version = "0.11.12", features = ["json", "blocking"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.8.24"
 serde_json = "1.0"
 simplelog = "0.12.0"
+text_io = "0.1.12"
+strum = { version = "0.24.1", features = ["derive"] }
 thiserror = "1.0"
 tokio = { version = "1.18", features = ["full"] }
 url = "2.2"

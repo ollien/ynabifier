@@ -11,18 +11,13 @@ YNAB has built in functionality to import transactions from your credit cards, b
 
 This project takes heavy inspiration from [buzzlawless/live-import-for-ynab](https://github.com/buzzlawless/live-import-for-ynab), which does effectively the same thing, but makes use of AWS Simple Email Service, if self-hosting isn't your game.
 
-## Note
-YNABifier, while functional, is still a bit of a work in progress. There are some edges that need to be cleaned up, but it works for the most part.
-
-Planned improvements:
- - [ ] Streamline the configuration process to not require fetching YNAB IDs by hand.
- - [x] IMAP sessions need to be more properly cleaned up.
- - [x] Various QoL features, such as allowing alternate configuration paths
-
 ## Setup
 
 YNABifier requires a configuration file named `config.yml` placed in your present working directory. It does require some fields that you can fetch from the YNAB API about your account, as well as a [personal access token](https://api.youneedabudget.com/).
 
+As a convenience, a setup utility is provided to generate the configuration. You can access this by running `cargo run --bin setup`, and then following the on-screen prompts.
+
+### Config Schema
 ```yml
 log_level: info # optional
 imap:
@@ -38,7 +33,7 @@ ynab:
       parser: The parser to use (see below)
 ```
 
-Once this is in place, you can use `cargo run --release`.
+Once this is in place, you can use `cargo run --release` to run YNABifier, or `cargo build --release`, and use the built binary.
 
 ## Supported transaction providers
 - TD Bank (`td` in the configuration)
