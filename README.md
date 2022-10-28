@@ -1,21 +1,35 @@
 # YNABifier
 
 
-Loads transactions into [You Need a Budget](https://www.youneedabudget.com/) (YNAB) in real time!*
+Loads transactions into [You Need a Budget](https://www.youneedabudget.com/)
+(YNAB) in real time!*
 
 \* for varying definitions of real time
 
 <hr>
 
-YNAB has built in functionality to import transactions from your credit cards, but banks often don't make this data available very quickly; usually it takes a day or two. However, many banks have the ability to send emails to you when you have a transaction over a certain amount (which can be $0, if you like!). YNABifier scans these emails for transactions, and automatically imports them to YNAB.
+YNAB has built in functionality to import transactions from your credit cards,
+but banks often don't make this data available very quickly; usually it takes a
+day or two. However, many banks have the ability to send emails to you when you
+have a transaction over a certain amount (which can be $0, if you like!).
+YNABifier scans these emails for transactions, and automatically imports them to
+YNAB.
 
-This project takes heavy inspiration from [buzzlawless/live-import-for-ynab](https://github.com/buzzlawless/live-import-for-ynab), which does effectively the same thing, but makes use of AWS Simple Email Service, if self-hosting isn't your game.
+This project takes heavy inspiration from
+[buzzlawless/live-import-for-ynab](https://github.com/buzzlawless/live-import-for-ynab),
+which does effectively the same thing, but makes use of AWS Simple Email
+Service, if self-hosting isn't your game.
 
 ## Setup
 
-YNABifier requires a configuration file named `config.yml` placed in your present working directory. It does require some fields that you can fetch from the YNAB API about your account, as well as a [personal access token](https://api.youneedabudget.com/).
+YNABifier requires a configuration file named `config.yml` placed in your
+present working directory. It does require some fields that you can fetch from
+the YNAB API about your account, as well as a [personal access
+token](https://api.youneedabudget.com/).
 
-As a convenience, a setup utility is provided to generate the configuration. You can access this by running `cargo run --bin setup`, and then following the on-screen prompts.
+As a convenience, a setup utility is provided to generate the configuration. You
+can access this by running `cargo run --bin setup`, and then following the
+on-screen prompts.
 
 ### Config Schema
 ```yml
@@ -33,7 +47,8 @@ ynab:
       parser: The parser to use (see below)
 ```
 
-Once this is in place, you can use `cargo run --release` to run YNABifier, or `cargo build --release`, and use the built binary.
+Once this is in place, you can use `cargo run --release` to run YNABifier, or
+`cargo build --release`, and use the built binary.
 
 ## Supported transaction providers
 - TD Bank (`td` in the configuration)
