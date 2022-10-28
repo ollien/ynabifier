@@ -332,10 +332,9 @@ mod tests {
     use crate::testutil::TokioSpawner;
 
     use super::*;
-    use futures::stream;
     use futures::{
         channel::oneshot::{self, Sender},
-        StreamExt,
+        stream, StreamExt,
     };
     use thiserror::Error;
     use tokio::time;

@@ -5,8 +5,7 @@ extern crate log;
 
 use async_trait::async_trait;
 use clap::Parser;
-use futures::{select, FutureExt};
-use futures::{stream::StreamExt, Future};
+use futures::{select, stream::StreamExt, Future, FutureExt};
 use log::LevelFilter;
 use tokio::task::{JoinError, JoinHandle};
 use ynabifier::task::{Handle, Join};

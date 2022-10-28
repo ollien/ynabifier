@@ -1,7 +1,6 @@
 //! The login module abstracts the generation of IMAP sessions for use when fetching emails
 
-use crate::config::IMAP as IMAPConfig;
-use crate::{IMAPClient, IMAPSession};
+use crate::{config::IMAP as IMAPConfig, IMAPClient, IMAPSession};
 use async_imap::error::Result as IMAPResult;
 use async_native_tls::TlsConnector;
 use async_trait::async_trait;

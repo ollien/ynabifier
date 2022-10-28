@@ -7,8 +7,7 @@ use thiserror::Error;
 
 use crate::{IMAPSession, IMAPTransportStream};
 use async_imap::{
-    error::Error as IMAPError,
-    error::Result as IMAPResult,
+    error::{Error as IMAPError, Result as IMAPResult},
     extensions::idle::{Handle, IdleResponse},
     imap_proto::Response as IMAPResponse,
 };

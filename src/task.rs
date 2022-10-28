@@ -1,7 +1,10 @@
 use async_trait::async_trait;
-use std::error::Error;
-use std::fmt::{Display, Formatter};
-pub(crate) use {register::Registry, stop::Resolution as StopResolution, stop::ResolveOrStop};
+pub(crate) use register::Registry;
+use std::{
+    error::Error,
+    fmt::{Display, Formatter},
+};
+pub(crate) use stop::{Resolution as StopResolution, ResolveOrStop};
 
 use futures::Future;
 use thiserror::Error;
