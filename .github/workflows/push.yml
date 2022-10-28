@@ -3,7 +3,7 @@ on: [push]
 name: Push
 jobs:
   build_and_test:
-    name: Rust project
+    name: Build and Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -11,16 +11,22 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Unit tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --release
-
       - name: Clippy
         uses: actions-rs/cargo@v1
         with:
           command: clippy
+
+      - name: Check Formatting
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --check
+
+      - name: Unit Tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --release
 
       - name: Check Build
         uses: actions-rs/cargo@v1
