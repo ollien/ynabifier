@@ -53,3 +53,13 @@ Once this is in place, you can use `cargo run --release` to run YNABifier, or
 ## Supported transaction providers
 - TD Bank (`td` in the configuration)
 - Citi Bank (`citi` in the configuration)
+
+## A meta note
+This project was my first foray into async Rust, and there's definitely some
+remnants of it being my first time. An explicit goal for the lib crate was to
+make it async runtime agnostic, which was a harder challenge than expected, but
+is why there are wrappers around things like task cancellation and management.
+All in all, while this project was fun, I don't know that I would have chosen
+async Rust for it if I were to do it all over; I might have used something like
+Elixir. If I did use async Rust again, I might reach for an actor framework like
+Actix.
