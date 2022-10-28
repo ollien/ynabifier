@@ -2,7 +2,7 @@
 name = "ynabifier"
 version = "0.1.0"
 edition = "2021"
-ynabifier = "Imports transactions to YNAB from bank emails"
+description = "Imports transactions to YNAB from bank emails"
 license = "Apache-2.0"
 repository = "https://github.com/ollien/ynabifier"
 homepage = "https://github.com/ollien/ynabifier"
