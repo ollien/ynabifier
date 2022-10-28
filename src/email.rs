@@ -19,7 +19,7 @@ use thiserror::Error;
 
 use crate::{
     task::{self, Join, Registry, ResolveOrStop, Spawn, SpawnError},
-    CloseableStream,
+    CloseableStream, IMAPSession,
 };
 
 use async_trait::async_trait;
@@ -311,6 +311,13 @@ where
         .map_err(StreamError::SinkFailed)?;
 
     Ok(())
+}
+
+async fn best_effort_logout(session: &mut IMAPSession) {
+    let logout_res = session.logout().await;
+    if let Err(err) = logout_res {
+        error!("Failed to best-effort tear down session: {err}");
+    }
 }
 
 #[cfg(test)]

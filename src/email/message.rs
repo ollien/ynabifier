@@ -1,4 +1,4 @@
-use crate::{task::ResolveOrStop, IMAPSession, Message, SessionGenerator};
+use crate::{email, task::ResolveOrStop, IMAPSession, Message, SessionGenerator};
 use std::sync::Arc;
 
 use super::{task::StopResolution, MessageFetcher, SequenceNumber};
@@ -70,7 +70,8 @@ where
             }
         };
 
-        best_effort_logout(&mut session).await;
+        debug!("Logging out after fetch");
+        email::best_effort_logout(&mut session).await;
         body_res.map(|body| Message { raw: body })
     }
 }
@@ -101,17 +102,10 @@ async fn generate_fetchable_session<G: SessionGenerator>(
     match examine_res {
         Ok(_) => Ok(session),
         Err(err) => {
-            best_effort_logout(&mut session).await;
+            debug!("Logging out after failing to setup inbox");
+
+            email::best_effort_logout(&mut session).await;
             Err(err)
         }
-    }
-}
-
-async fn best_effort_logout(session: &mut IMAPSession) {
-    debug!("Logging out after fetch");
-
-    let logout_res = session.logout().await;
-    if let Err(err) = logout_res {
-        error!("Failed to best-effort tear down session: {err}");
     }
 }

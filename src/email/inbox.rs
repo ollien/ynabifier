@@ -3,7 +3,7 @@
 use self::idle::{SessionCell, SessionState};
 use super::{login::SessionGenerator, SequenceNumber};
 use crate::{
-    email::inbox::reconnect::Delay,
+    email::{self, inbox::reconnect::Delay},
     task::{self, ResolveOrStop, Spawn, SpawnError, StopResolution},
     CloseableStream, IMAPSession, IMAPTransportStream,
 };
@@ -200,9 +200,29 @@ async fn watch_session_for_new_emails_until_fail(
     stop: Shared<StopToken>,
 ) -> Result<IMAPSession, IdleWatchError> {
     let mut session_cell = SessionCell::new(session);
-    watch_session_cell_for_new_emails_until_fail(&mut session_cell, sender, stop).await?;
+    let watch_res =
+        watch_session_cell_for_new_emails_until_fail(&mut session_cell, sender, stop).await;
 
-    debug!("Done watching, reclaiming session...");
+    debug!("Reclaiming session...");
+    let mut session = reclaim_session_from_cell(session_cell).await?;
+    match watch_res {
+        Ok(()) => Ok(session),
+        Err(err) => {
+            // We can't return the session here, because there's an error, but we will do our best to log it out
+            // so the caller doesn't have to worry about cleaning it up.
+
+            debug!("Logging out session after failed watch");
+            // it's quite possible this will fail, for instance if we fully disconnected from the IMAP server,
+            // but that's fine.
+            email::best_effort_logout(&mut session).await;
+            Err(err)
+        }
+    }
+}
+
+async fn reclaim_session_from_cell(
+    session_cell: SessionCell<IMAPSession, IMAPIdleHandle<IMAPTransportStream>>,
+) -> Result<IMAPSession, IdleWatchError> {
     match session_cell.into_state() {
         // If we've only initialized the cell, we don't need to actually do anything...
         SessionState::Initialized(session) => Ok(session),
