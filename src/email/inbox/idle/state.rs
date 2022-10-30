@@ -2,6 +2,7 @@
 
 use super::{Idler, IntoIdler};
 use async_imap::error::Result as IMAPResult;
+use futures::Future;
 
 pub struct IdlerCell<I> {
     idler: I,
@@ -56,11 +57,19 @@ pub struct SessionCell<S, I> {
     state: Option<SessionState<S, I>>,
 }
 
-impl<S: IntoIdler<OutputIdler = I>, I: Idler<DoneIdleable = S>> SessionCell<S, I> {
+impl<S, I> SessionCell<S, I>
+where
+    S: IntoIdler<OutputIdler = I>,
+    I: Idler<DoneIdleable = S>,
+{
     pub fn new(into_idler: S) -> Self {
         Self {
             state: Some(SessionState::new(into_idler)),
         }
+    }
+
+    fn new_from_state(state: SessionState<S, I>) -> Self {
+        Self { state: Some(state) }
     }
 
     /// Starts a new idle session if possible, or will return itself if the session is already started.
@@ -89,11 +98,24 @@ impl<S: IntoIdler<OutputIdler = I>, I: Idler<DoneIdleable = S>> SessionCell<S, I
     pub fn into_state(self) -> SessionState<S, I> {
         self.state.expect("invariant violated: state is None")
     }
+
+    /// Attempt to map the state stored in this cell to another. Given that this call must relinquish
+    /// control of a possible session, it is the caller's responsibility to clean it up.
+    pub async fn try_map_state<F, E, M>(self, mapper: M) -> Result<Self, E>
+    where
+        F: Future<Output = Result<SessionState<S, I>, E>>,
+        M: FnOnce(SessionState<S, I>) -> F,
+    {
+        // In normal operation, this can't happen. See `get_idler_cell`.
+        assert!(self.state.is_some(), "invariant violated: state is None");
+        let new_state = mapper(self.state.unwrap()).await?;
+        Ok(Self::new_from_state(new_state))
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{convert::Infallible, sync::Arc};
 
     use super::*;
     use async_imap::error::Result as IMAPResult;
@@ -167,6 +189,28 @@ mod tests {
         assert!(matches!(
             session_cell.into_state(),
             SessionState::IdleReady(_),
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_can_map_state() {
+        let mut session_cell = SessionCell::new(MockSession);
+        session_cell = session_cell
+            .try_map_state::<_, Infallible, _>(|state| async {
+                if let SessionState::Initialized(session) = state {
+                    Ok(SessionState::IdleReady(IdlerCell::new(
+                        session.begin_idle(),
+                    )))
+                } else {
+                    panic!("idle cannot be ready at this point");
+                }
+            })
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            session_cell.into_state(),
+            SessionState::IdleReady(_)
         ));
     }
 

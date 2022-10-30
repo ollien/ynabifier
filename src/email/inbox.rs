@@ -45,6 +45,8 @@ enum IdleWatchError {
     IMAPError(IMAPError),
     #[error("Disconnected from IMAP server")]
     Disconnected,
+    #[error("IDLE timed out")]
+    IdleTimeout,
 }
 
 /// Watches the inbox for new emails, yielding their sequence numbers numbers.
@@ -192,19 +194,40 @@ async fn watch_for_new_emails<G: SessionGenerator + Sync>(
     debug!("Watch finished...");
 }
 
-/// Watch for the arrival of as many emails as possible before a failure occurs. While watching, the caller must
-/// relinquish ownership of the `Session`, but it will be returned to it upon successful completion
+/// Watch for the arrival of as many emails as possible before a failure occurs, but IDLE timeouts will attempt to
+/// be reconciled. While watching, the caller must relinquish ownership of the `Session`, but it will be returned to it
+/// upon successful completion
 async fn watch_session_for_new_emails_until_fail(
     session: IMAPSession,
     sender: &mut UnboundedSender<SequenceNumber>,
     stop: Shared<StopToken>,
 ) -> Result<IMAPSession, IdleWatchError> {
     let mut session_cell = SessionCell::new(session);
-    let watch_res =
-        watch_session_cell_for_new_emails_until_fail(&mut session_cell, sender, stop).await;
+    let watch_res = loop {
+        let watch_res =
+            watch_session_cell_for_new_emails(&mut session_cell, sender, stop.clone()).await;
 
-    debug!("Reclaiming session...");
-    let mut session = reclaim_session_from_cell(session_cell).await?;
+        // If we time out of the idle state, we should just reclaim our session (which terminates IDLE), and
+        // watch again.
+        //
+        // Honestly, this is a bit messy to do here. I might prefer if we tried to reclaim the session inside
+        // watch_session_cell_for_new_emails but the error handling would get a lot messier, given the fallibility
+        // of reclaiming the session
+        if let Err(IdleWatchError::IdleTimeout) = watch_res {
+            debug!("Reclaiming session and rebuilding session cell after IDLE timeout...");
+            session_cell = session_cell
+                .try_map_state(|state| async {
+                    let session = reclaim_session_from_state(state).await?;
+                    Ok(SessionState::Initialized(session))
+                })
+                .await?;
+        } else {
+            break watch_res;
+        }
+    };
+
+    debug!("Reclaiming session to clean up...");
+    let mut session = reclaim_session_from_state(session_cell.into_state()).await?;
     match watch_res {
         Ok(()) => Ok(session),
         Err(err) => {
@@ -220,10 +243,10 @@ async fn watch_session_for_new_emails_until_fail(
     }
 }
 
-async fn reclaim_session_from_cell(
-    session_cell: SessionCell<IMAPSession, IMAPIdleHandle<IMAPTransportStream>>,
+async fn reclaim_session_from_state(
+    session_state: SessionState<IMAPSession, IMAPIdleHandle<IMAPTransportStream>>,
 ) -> Result<IMAPSession, IdleWatchError> {
-    match session_cell.into_state() {
+    match session_state {
         // If we've only initialized the cell, we don't need to actually do anything...
         SessionState::Initialized(session) => Ok(session),
         // If we've begun idling however, then we need to finish up and return the reclaimed session
@@ -235,8 +258,8 @@ async fn reclaim_session_from_cell(
     }
 }
 
-/// Watch for the arrival of as many emails as possible before a failure occurs.
-async fn watch_session_cell_for_new_emails_until_fail(
+/// Watch for the arrival of as many emails as possible before a failure occurs, including an IDLE timeout.
+async fn watch_session_cell_for_new_emails(
     session_cell: &mut SessionCell<IMAPSession, IMAPIdleHandle<IMAPTransportStream>>,
     sender: &mut UnboundedSender<SequenceNumber>,
     stop: Shared<StopToken>,
@@ -302,6 +325,7 @@ async fn idle_for_email(
                 }
             }
             Err(idle::Error::AsyncIMAPError(err)) => return Err(IdleWatchError::IMAPError(err)),
+            Err(idle::Error::NeedNewIdle) => return Err(IdleWatchError::IdleTimeout),
             Err(idle::Error::NeedReconnect) => return Err(IdleWatchError::Disconnected),
         }
     }
