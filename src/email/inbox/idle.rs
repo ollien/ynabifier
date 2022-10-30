@@ -42,6 +42,7 @@ pub trait Idler {
 
 /// Error is a thin wrapper around [`IMAPError`], with the ability to differentiate between different failure cases.
 #[derive(Error, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum Error {
     /// Indicates that an IDLE command timed out, and should be re-issued to continue
     #[error("idle timed out")]
