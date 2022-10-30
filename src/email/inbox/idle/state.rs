@@ -2,7 +2,6 @@
 
 use super::{Idler, IntoIdler};
 use async_imap::error::Result as IMAPResult;
-use futures::Future;
 
 pub struct IdlerCell<I> {
     idler: I,
@@ -68,10 +67,6 @@ where
         }
     }
 
-    fn new_from_state(state: SessionState<S, I>) -> Self {
-        Self { state: Some(state) }
-    }
-
     /// Starts a new idle session if possible, or will return itself if the session is already started.
     pub fn get_idler_cell(&mut self) -> &mut IdlerCell<I> {
         // In normal operation, this can't happen. This can only happen if the following assignment panics
@@ -94,28 +89,43 @@ where
         }
     }
 
-    /// Dissolve the cell into its inner state
-    pub fn into_state(self) -> SessionState<S, I> {
-        self.state.expect("invariant violated: state is None")
+    /// Reclaim the session contained within this cell.
+    ///
+    /// # Errors
+    /// If the cell has already been initialized as an idler, it is possible for this to fail, as we must send a signal
+    /// to the IMAP server that we are done idling. If this fails, the session is not recoverable.
+    pub async fn into_session(self) -> IMAPResult<S> {
+        // In normal operation, this can't fail. This can only happen if the following assignment panics
+        // after the call to `take()`
+        match self.state.expect("invariant violated: state is None") {
+            // If we've only initialized the cell, we don't need to actually do anything...
+            SessionState::Initialized(session) => Ok(session),
+            // If we've begun idling however, then we need to finish up and return the reclaimed session
+            SessionState::IdleReady(idle_cell) => {
+                let idle_handle = idle_cell.into_inner();
+                debug!("Marking idle handle done...");
+                let session = idle_handle.done().await?;
+                Ok(session)
+            }
+        }
     }
 
-    /// Attempt to map the state stored in this cell to another. Given that this call must relinquish
-    /// control of a possible session, it is the caller's responsibility to clean it up.
-    pub async fn try_map_state<F, E, M>(self, mapper: M) -> Result<Self, E>
-    where
-        F: Future<Output = Result<SessionState<S, I>, E>>,
-        M: FnOnce(SessionState<S, I>) -> F,
-    {
-        // In normal operation, this can't happen. See `get_idler_cell`.
-        assert!(self.state.is_some(), "invariant violated: state is None");
-        let new_state = mapper(self.state.unwrap()).await?;
-        Ok(Self::new_from_state(new_state))
+    /// Reinitialize this cell with the session. If an idler has been produced, it will be closed.
+    pub async fn into_reinitialized(self) -> IMAPResult<Self> {
+        let session = self.into_session().await?;
+        Ok(Self::new(session))
+    }
+
+    /// Dissolve the cell into its inner state. This is mostly a convenience for testing
+    #[cfg(test)]
+    fn into_state(self) -> SessionState<S, I> {
+        self.state.expect("invariant violated: state is None")
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{convert::Infallible, sync::Arc};
+    use std::sync::Arc;
 
     use super::*;
     use async_imap::error::Result as IMAPResult;
@@ -126,10 +136,11 @@ mod tests {
     struct MockSession;
     #[derive(Default)]
     struct MockIdler {
-        // This has to be a Mutex for a couple reasons
+        // These have to be a Mutex for a couple reasons
         // 1) some implementations of the Ilder trait use pointer wrappers, so we can't mutate directly
         // 2) it's async, so we can't use RefCell (they're not Send)
         num_init_calls: Mutex<u32>,
+        num_done_calls: Mutex<u32>,
     }
 
     macro_rules! impl_mocks {
@@ -155,6 +166,7 @@ mod tests {
                 }
 
                 async fn done(self) -> IMAPResult<Self::DoneIdleable> {
+                    *self.num_done_calls.lock().await += 1;
                     Ok($make_session)
                 }
             }
@@ -193,24 +205,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_can_map_state() {
-        let mut session_cell = SessionCell::new(MockSession);
-        session_cell = session_cell
-            .try_map_state::<_, Infallible, _>(|state| async {
-                if let SessionState::Initialized(session) = state {
-                    Ok(SessionState::IdleReady(IdlerCell::new(
-                        session.begin_idle(),
-                    )))
-                } else {
-                    panic!("idle cannot be ready at this point");
-                }
-            })
+    async fn test_into_session_does_nothing_if_not_idle_prepared() {
+        let session_arc = Arc::new(MockSession);
+        let session_cell = SessionCell::new(session_arc.clone());
+        let reclaimed_session_arc = session_cell
+            .into_session()
             .await
-            .unwrap();
+            .expect("failed to reinitialize");
+
+        assert!(Arc::ptr_eq(&session_arc, &reclaimed_session_arc));
+    }
+
+    #[tokio::test]
+    async fn test_into_session_calls_done_on_idler_if_idle_prepared() {
+        let mut session_cell = SessionCell::new(Arc::new(MockSession));
+        let idler = session_cell.get_idler_cell().idler.clone();
+        assert_eq!(0, *idler.num_done_calls.lock().await);
+        session_cell
+            .into_session()
+            .await
+            .expect("failed to reinitialize");
+
+        assert_eq!(1, *idler.num_done_calls.lock().await);
+    }
+
+    #[tokio::test]
+    async fn test_into_reinitialized_calls_gives_initialized_cell_after_idle_prepare() {
+        let mut session_cell = SessionCell::new(Arc::new(MockSession));
+        let idler = session_cell.get_idler_cell().idler.clone();
+        assert_eq!(0, *idler.num_done_calls.lock().await);
+        let reinitialized_cell = session_cell
+            .into_reinitialized()
+            .await
+            .expect("failed to reinitialize");
 
         assert!(matches!(
-            session_cell.into_state(),
-            SessionState::IdleReady(_)
+            reinitialized_cell.into_state(),
+            SessionState::Initialized(_)
         ));
     }
 

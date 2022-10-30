@@ -1,6 +1,6 @@
 //! The inbox module holds implementations to allow for the monitoring of a real inbox
 
-use self::idle::{SessionCell, SessionState};
+use self::idle::SessionCell;
 use super::{login::SessionGenerator, SequenceNumber};
 use crate::{
     email::{self, inbox::reconnect::Delay},
@@ -207,27 +207,25 @@ async fn watch_session_for_new_emails_until_fail(
         let watch_res =
             watch_session_cell_for_new_emails(&mut session_cell, sender, stop.clone()).await;
 
-        // If we time out of the idle state, we should just reclaim our session (which terminates IDLE), and
-        // watch again.
-        //
-        // Honestly, this is a bit messy to do here. I might prefer if we tried to reclaim the session inside
-        // watch_session_cell_for_new_emails but the error handling would get a lot messier, given the fallibility
-        // of reclaiming the session
+        // If we time out of the idle state, we should just reinitialize the cell for our session
+        // (which terminates IDLE), and watch again.
         if let Err(IdleWatchError::IdleTimeout) = watch_res {
             debug!("Reclaiming session and rebuilding session cell after IDLE timeout...");
             session_cell = session_cell
-                .try_map_state(|state| async {
-                    let session = reclaim_session_from_state(state).await?;
-                    Ok(SessionState::Initialized(session))
-                })
-                .await?;
+                .into_reinitialized()
+                .await
+                .map_err(IdleWatchError::IMAPError)?;
         } else {
             break watch_res;
         }
     };
 
     debug!("Reclaiming session to clean up...");
-    let mut session = reclaim_session_from_state(session_cell.into_state()).await?;
+    let mut session = session_cell
+        .into_session()
+        .await
+        .map_err(IdleWatchError::IMAPError)?;
+
     match watch_res {
         Ok(()) => Ok(session),
         Err(err) => {
@@ -239,21 +237,6 @@ async fn watch_session_for_new_emails_until_fail(
             // but that's fine.
             email::best_effort_logout(&mut session).await;
             Err(err)
-        }
-    }
-}
-
-async fn reclaim_session_from_state(
-    session_state: SessionState<IMAPSession, IMAPIdleHandle<IMAPTransportStream>>,
-) -> Result<IMAPSession, IdleWatchError> {
-    match session_state {
-        // If we've only initialized the cell, we don't need to actually do anything...
-        SessionState::Initialized(session) => Ok(session),
-        // If we've begun idling however, then we need to finish up and return the reclaimed session
-        SessionState::IdleReady(idle_cell) => {
-            let idle_handle = idle_cell.into_inner();
-            debug!("Marking idle handle done...");
-            idle_handle.done().await.map_err(IdleWatchError::IMAPError)
         }
     }
 }
