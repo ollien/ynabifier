@@ -85,7 +85,7 @@ where
 
         match &mut self.state {
             Some(SessionState::IdleReady(idler)) => idler,
-            _ => panic!("unreachable"),
+            _ => unreachable!(),
         }
     }
 
