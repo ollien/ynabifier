@@ -74,7 +74,7 @@ where
     let date_text = find_table_value_with_label(table_text_iter, |label| label == "Date")
         .ok_or_else(|| super::Error("failed to find date in html body".to_string()))?;
 
-    NaiveDate::parse_from_str(dbg!(date_text), "%m/%d/%Y")
+    NaiveDate::parse_from_str(date_text, "%m/%d/%Y")
         .map_err(|err| super::Error(format!("failed to parse date from html body: {err:?}")))
 }
 
