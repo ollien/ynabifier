@@ -10,7 +10,7 @@ use crate::{
 use async_imap::{
     error::{Error as IMAPError, Result as IMAPResult},
     extensions::idle::Handle as IMAPIdleHandle,
-    imap_proto::{MailboxDatum, Response},
+    imap_proto::{MailboxDatum, Response, Status},
 };
 use async_trait::async_trait;
 use futures::{
@@ -47,6 +47,12 @@ enum IdleWatchError {
     Disconnected,
     #[error("IDLE timed out")]
     IdleTimeout,
+}
+
+enum WatchResponse {
+    Exists(SequenceNumber),
+    Bye,
+    Unknown,
 }
 
 /// Watches the inbox for new emails, yielding their sequence numbers numbers.
@@ -215,6 +221,9 @@ async fn watch_session_for_new_emails_until_fail(
                 .into_reinitialized()
                 .await
                 .map_err(IdleWatchError::IMAPError)?;
+        } else if let Err(IdleWatchError::Disconnected) = watch_res {
+            // If we're truly disconnected, we can't attempt to log out or reclaim the session.
+            return Err(watch_res.unwrap_err());
         } else {
             break watch_res;
         }
@@ -298,12 +307,13 @@ async fn idle_for_email(
         match idle_res {
             Ok(data) => {
                 let response = data.response();
-                let maybe_sequence_number = get_sequence_number_from_response(response);
-
-                match maybe_sequence_number {
-                    Some(sequence_number) => return Ok(sequence_number),
-                    None => {
-                        debug!("Re-waiting for IDLE after getting non-EXISTS response from IDLE command: {response:?}");
+                match parse_response(response) {
+                    WatchResponse::Exists(seq) => return Ok(seq),
+                    WatchResponse::Bye => return Err(IdleWatchError::Disconnected),
+                    WatchResponse::Unknown => {
+                        debug!(
+                            "Re-waiting for IDLE after getting unknown response from IDLE command: {response:?}"
+                        );
                     }
                 }
             }
@@ -314,10 +324,20 @@ async fn idle_for_email(
     }
 }
 
-fn get_sequence_number_from_response(response: &Response) -> Option<SequenceNumber> {
+fn parse_response(response: &Response) -> WatchResponse {
     match response {
-        Response::MailboxData(MailboxDatum::Exists(seq)) => Some(SequenceNumber(*seq)),
-        _ => None,
+        Response::MailboxData(MailboxDatum::Exists(seq)) => {
+            WatchResponse::Exists(SequenceNumber(*seq))
+        }
+        Response::Data {
+            status: Status::Bye,
+            code: _,
+            information: _,
+        } => {
+            debug!("Received BYE from IMAP Server");
+            WatchResponse::Bye
+        }
+        _ => WatchResponse::Unknown,
     }
 }
 
