@@ -119,10 +119,9 @@ impl Client {
 
     fn build_transaction_url(budget_id: &str) -> Result<Url, Error> {
         const BASE_URL: &str = "https://api.youneedabudget.com/v1/budgets/";
-        // const BASE_URL: &str = "http://localhost:8080/v1/budgets/";
         Url::parse(BASE_URL)
             .expect("parsing ynab base url failed")
-            .join(format!("{}/", budget_id).as_ref())
+            .join(format!("{budget_id}/").as_ref())
             .and_then(|url| url.join("transactions"))
             .map_err(Error::URLBuildFailed)
     }
@@ -141,8 +140,10 @@ impl Client {
 }
 
 fn convert_amount_to_ynab_form(amount: &str) -> Result<i32, Error> {
-    let pattern = Regex::new(r"^\$?(\d+)\.(\d\d)$").unwrap();
-    let captures = pattern.captures(amount).ok_or_else(|| {
+    let amount_pattern = Regex::new(r"^\$?(\d+)\.(\d\d)$").unwrap();
+    let stripped_amount = amount.replace(',', "");
+    dbg!(&stripped_amount);
+    let captures = amount_pattern.captures(&stripped_amount).ok_or_else(|| {
         Error::AmountParseFailed(amount.to_string(), "Amount is malformed".to_string())
     })?;
 
@@ -184,6 +185,7 @@ mod tests {
     #[test_case("$4.50", -4500)]
     #[test_case("$1.00", -1000)]
     #[test_case("4.50", -4500; "no dollar sign")]
+    #[test_case("$4,526.00", -4_526_000; "comma separated")]
     fn test_converts_dollar_amount_to_ynab_form(raw: &str, expected: i32) {
         let converted = convert_amount_to_ynab_form(raw).expect("failed to convert");
         assert_eq!(converted, expected);
