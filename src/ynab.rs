@@ -82,6 +82,11 @@ impl Client {
         let ynab_transaction =
             YNABTransaction::from_transaction_for_account(transaction, account_id)?;
 
+        if ynab_transaction.amount == 0 {
+            info!("Ignoring zero dollar transaction (likely an authorization charge)");
+            return Ok(());
+        }
+
         let request_data = YNABTransactionRequestData {
             transaction: ynab_transaction,
         };
@@ -186,6 +191,7 @@ mod tests {
     #[test_case("$1.00", -1000)]
     #[test_case("4.50", -4500; "no dollar sign")]
     #[test_case("$4,526.00", -4_526_000; "comma separated")]
+    #[test_case("$0.00", 0)]
     fn test_converts_dollar_amount_to_ynab_form(raw: &str, expected: i32) {
         let converted = convert_amount_to_ynab_form(raw).expect("failed to convert");
         assert_eq!(converted, expected);
