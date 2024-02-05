@@ -12,7 +12,7 @@ use async_imap::{
     imap_proto::Response as IMAPResponse,
 };
 
-pub use state::{IdlerCell, SessionCell, SessionState};
+pub use state::SessionCell;
 
 mod state;
 
