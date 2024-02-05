@@ -238,7 +238,7 @@ async fn stream_incoming_messages_to_sink<S, N, F, O>(
             .await;
 
             match fetch_res {
-                Ok(_) => {}
+                Ok(()) => {}
                 Err(StreamError::FetchFailed(err)) => error!("Failed to fetch message: {err}"),
                 Err(StreamError::SinkFailed(err)) => {
                     error!("Failed to send fetched message to output sink: {err:?}");
@@ -418,7 +418,7 @@ mod tests {
     async fn test_messages_from_streamer_go_to_sink() {
         let (tx, _rx) = oneshot::channel::<()>();
         let sequence_number_stream =
-            TrackedCloseableSteam::new(stream::iter(vec![SequenceNumber(123)].into_iter()), tx);
+            TrackedCloseableSteam::new(stream::iter(vec![SequenceNumber(123)]), tx);
         let mut mock_fetcher = MockMessageFetcher::new();
 
         mock_fetcher.stage_message(SequenceNumber(123), "hello, world!");

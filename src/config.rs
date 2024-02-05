@@ -166,7 +166,7 @@ mod tests {
     #[test]
     fn test_deserialize_config() {
         let data = textwrap::dedent(
-            r#"
+            r"
             log_level: debug
             imap:
                 domain: imap.google.com
@@ -179,7 +179,7 @@ mod tests {
                 accounts:
                     - account_id: 48b16c37-8fdc-4072-977c-e6084c924032
                       parser: citi
-        "#,
+        ",
         );
 
         let expected = Config {

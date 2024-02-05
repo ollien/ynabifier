@@ -225,9 +225,7 @@ mod tests {
         }
 
         let (_tx, never_rx) = oneshot::channel::<()>();
-        let infinite_task_handle = spawner
-            .spawn(async move { never_rx.await })
-            .expect("failed to spawn");
+        let infinite_task_handle = spawner.spawn(never_rx).expect("failed to spawn");
         let infinite_task_token = registry.register_handle(infinite_task_handle);
 
         // Unblock all the finite tasks

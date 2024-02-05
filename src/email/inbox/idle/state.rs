@@ -175,12 +175,12 @@ mod tests {
 
     #[rustfmt::skip]
     impl_mocks!(
-        MockSession: MockSession::default(),
+        MockSession: MockSession,
         MockIdler: MockIdler::default(),
     );
     // So we can assert same-ness, we implement a MockSession that can produce a MockIdler
     impl_mocks!(
-        Arc<MockSession>: Arc::new(MockSession::default()),
+        Arc<MockSession>: Arc::new(MockSession),
         Arc<MockIdler>: Arc::new(MockIdler::default())
     );
 

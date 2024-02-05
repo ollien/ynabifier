@@ -55,12 +55,11 @@ fn main() {
     let personal_access_token = prompt_for_personal_access_token();
     let client_res = setup_client(&personal_access_token);
     let client = client_res.expect_exit(2, |err| {
-        println!("{}", err);
-        eprintln!("{} failed to setup YNAB client: {err}", error_prefix);
+        eprintln!("{error_prefix} failed to setup YNAB client: {err}");
     });
 
     let maybe_budget_id = prompt_for_budget_id(&client).expect_exit(2, |err| {
-        eprintln!("{} failed to get budget: {}", error_prefix, err);
+        eprintln!("{error_prefix} failed to get budget: {err}");
     });
 
     let budget_id = maybe_budget_id.expect_exit(3, |_| {
@@ -69,19 +68,19 @@ fn main() {
     });
 
     let accounts = prompt_for_accounts(&client, &budget_id).expect_exit(4, |err| {
-        eprintln!("{} failed to get accounts: {}", error_prefix, err);
+        eprintln!("{error_prefix} failed to get accounts: {err}");
     });
 
     let config =
         build_config(&personal_access_token, &budget_id, &accounts).expect_exit(5, |err| {
-            eprintln!("{} failed to build config: {}", error_prefix, err);
+            eprintln!("{error_prefix} failed to build config: {err}");
         });
 
     eprintln!(
         "\n{}",
         "Configuration generated. You should place the YAML in config.yml and fill in your IMAP account details. Enjoy YNABifier!".green()
     );
-    println!("{}", config);
+    println!("{config}");
 }
 
 fn prompt_for_personal_access_token() -> String {
@@ -235,7 +234,7 @@ fn choose_parser_for_account(account: &NamedItem) -> Parser {
         let input: String = read_line!();
         match parsers.get(&input.to_lowercase()) {
             Some(&parser) => return parser,
-            None => eprintln!("Invalid choice, must be one of {}", parser_name_str),
+            None => eprintln!("Invalid choice, must be one of {parser_name_str}"),
         }
     }
 }
@@ -244,7 +243,7 @@ fn setup_client(personal_access_token: &str) -> anyhow::Result<Client> {
     let mut headers = HeaderMap::new();
     headers.insert(
         "Authorization",
-        HeaderValue::from_str(&format!("Bearer {}", personal_access_token))?,
+        HeaderValue::from_str(&format!("Bearer {personal_access_token}"))?,
     );
     headers.insert("Content-Type", HeaderValue::from_static("application/json"));
     let client = Client::builder().default_headers(headers).build()?;

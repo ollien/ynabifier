@@ -109,7 +109,7 @@ fn listen_for_transactions(config: &Config) -> Result<(), anyhow::Error> {
         // amount of time for cleanup
         select! {
             _ = tokio::signal::ctrl_c().fuse() => (),
-            _ = stream.close().fuse() => (),
+            () = stream.close().fuse() => (),
         }
 
         Ok(())
@@ -180,7 +180,7 @@ impl Join for TokioJoinHandle {
     async fn join(self) -> Result<(), Self::Error> {
         match self.0.await {
             Err(err) => Err(err),
-            Ok(_) => Ok(()),
+            Ok(()) => Ok(()),
         }
     }
 }
